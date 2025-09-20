@@ -3,35 +3,43 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# --- WHAT: build a tidy table from res + time_dt ---
-n_events = len(res.get("index_start", []))
+# --- convert res fields (lists) -> numpy arrays with explicit dtypes ---
+idx_start = np.array(res["index_start"], dtype=int)
+idx_end   = np.array(res["index_end"],   dtype=int)
+duration  = np.array(res["duration"], dtype=int)
+i_max     = np.array(res["intensity_max"], dtype=float)
+i_mean    = np.array(res["intensity_mean"], dtype=float)
+i_cum     = np.array(res["intensity_cumulative"], dtype=float)
+
+n_events = idx_start.size
 if n_events == 0:
     raise SystemExit("No events to tabulate; re-run detection or change region.")
 
-idx_start = np.array(res["index_start"], dtype=int)
-idx_end   = np.array(res["index_end"],   dtype=int)
+# --- map indices back to real dates using your time_dt (DatetimeIndex) ---
+start_dates = [pd.to_datetime(time_dt[i]).date() for i in idx_start]
+end_dates   = [pd.to_datetime(time_dt[i]).date() for i in idx_end]
 
 event_df = pd.DataFrame({
-    "start_date": [pd.to_datetime(time_dt[i]).date() for i in idx_start],
-    "end_date":   [pd.to_datetime(time_dt[i]).date() for i in idx_end],
-    "duration_days": res["duration"].astype(int),
-    "intensity_max_degC": res["intensity_max"].astype(float),
-    "intensity_mean_degC": res["intensity_mean"].astype(float),
-    "cumulative_intensity_degC": res["intensity_cumulative"].astype(float)
+    "start_date": start_dates,
+    "end_date":   end_dates,
+    "duration_days": duration,
+    "intensity_max_degC": i_max,
+    "intensity_mean_degC": i_mean,
+    "cumulative_intensity_degC": i_cum,
 })
 
-# Add helper columns
-event_df["start_year"] = pd.DatetimeIndex(event_df["start_date"]).year
-event_df["end_year"]   = pd.DatetimeIndex(event_df["end_date"]).year
+# helper year columns
+event_df["start_year"] = pd.to_datetime(event_df["start_date"]).dt.year
+event_df["end_year"]   = pd.to_datetime(event_df["end_date"]).dt.year
 
-# --- WHY: save for later analysis/sharing ---
+# --- save to CSV ---
 out_dir = Path.cwd() / "mhw_outputs"
 out_dir.mkdir(exist_ok=True)
 csv_path = out_dir / "mhw_events_boxmean_lat0-30_lon40-100.csv"
 event_df.to_csv(csv_path, index=False)
 print(f"Saved events table → {csv_path}")
 
-# --- HOW: quick yearly summaries ---
+# --- yearly summaries ---
 yearly = (
     event_df
     .groupby("start_year")
@@ -41,11 +49,10 @@ yearly = (
     .reset_index()
     .rename(columns={"start_year": "year"})
 )
-
 print("First 5 rows of yearly summary:")
 print(yearly.head())
 
-# --- PLOTS: events/year and total HW days/year (matplotlib only) ---
+# --- plots ---
 plt.figure()
 plt.plot(yearly["year"], yearly["events"], marker="o")
 plt.title("Marine heatwave events per year (box-mean 0–30N, 40–100E)")
@@ -57,3 +64,4 @@ plt.plot(yearly["year"], yearly["total_hw_days"], marker="o")
 plt.title("Total marine heatwave days per year (box-mean 0–30N, 40–100E)")
 plt.xlabel("Year"); plt.ylabel("Days")
 plt.tight_layout(); plt.show()
+
