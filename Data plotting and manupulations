@@ -1,0 +1,146 @@
+def area_weighted_boxmean(da: xr.DataArray) -> xr.DataArray:
+    """
+    Compute area-weighted mean over lat-lon for a 3D DataArray (time, lat, lon).
+    Uses cos(latitude) weights (sufficient for regular lon-lat).
+    Returns a 1D DataArray over 'time'.
+    """
+    lat_name = "lat" if "lat" in da.coords else "latitude"
+    weights = np.cos(np.deg2rad(da[lat_name]))
+    # Broadcast weights to lat dimension
+    w = weights / weights.mean()  # normalize to avoid scale issues
+    # xarray's weighted requires xarray >= 0.13
+    return da.weighted(w).mean(dim=[lat_name, "lon" if "lon" in da.coords else "longitude"])
+
+def to_ordinal_days(time_index: pd.DatetimeIndex) -> np.ndarray:
+    """
+    Convert pandas DatetimeIndex to integer ordinal days (Python date.toordinal),
+    as expected by marineHeatWaves.detect.
+    """
+    return np.array([d.toordinal() for d in time_index], dtype=int)
+
+def plot_snapshot_map(da: xr.DataArray, when: Optional[str] = None, vmin=None, vmax=None) -> None:
+    """
+    Quick map of SST at a given date (first date if None).
+    """
+    # pick time
+    tcoord = da["time"].to_index()
+    if when is None:
+        ts = tcoord[0]
+    else:
+        ts = pd.to_datetime(when)
+        if ts not in tcoord:
+            # snap to nearest
+            ts = tcoord.get_loc(ts, method="nearest")
+            ts = tcoord[ts]
+    da2 = da.sel(time=ts)
+    
+    #plot figures
+    plt.figure(figsize=(7, 4))   #change figure size as needed
+    da2.plot.imshow(vmin=vmin, vmax=vmax, add_colorbar=True)
+    plt.title(f"{da.name} snapshot — {pd.Timestamp(ts).date()}")
+    plt.xlabel("Longitude"); plt.ylabel("Latitude")
+    plt.tight_layout(); plt.show()
+
+def plot_boxmean_series(da_box: xr.DataArray, title="Area-weighted box-mean SST (°C)") -> None:
+    """
+    Plot 1-D time series.
+    """
+    t = da_box["time"].to_index()  
+    plt.figure(figsize=(9, 3.2))    #change figure size as needed
+    plt.plot(t, da_box.values, lw=0.9)
+    plt.title(title)
+    plt.xlabel("Time"); plt.ylabel("°C")
+    plt.tight_layout(); plt.show()
+
+def first_pass_mhw(da_box: xr.DataArray,
+                   climatologyPeriod: List[int] = [1982, 2024],
+                   pctile: int = 90,
+                   minDuration: int = 5,
+                   joinAcrossGaps: bool = True) -> Tuple[dict, dict]:
+    """
+    Run marineHeatWaves.detect on a 1-D SST series (°C) and return (res, clim).
+    """
+    t = da_box["time"].to_index()
+    time_ord = to_ordinal_days(t)
+    temp = da_box.values.astype(float)
+    res, clim = mhw.detect(time_ord, temp,
+                           climatologyPeriod=climatologyPeriod,
+                           pctile=pctile,
+                           minDuration=minDuration,
+                           joinAcrossGaps=joinAcrossGaps)
+    return res, clim
+
+def summarize_events_table(res: dict) -> pd.DataFrame:
+    """
+    Convert MHW 'res' dict to a tidy event table.
+    """
+    # Each of these is a numpy array aligned by event index
+    cols = [
+        "event_start", "event_end", "duration",
+        "intensity_max", "intensity_mean", "intensity_cumulative"
+    ]
+    df = pd.DataFrame({
+        "event_start": pd.to_datetime(res["time_start"], origin="unix", unit="D")  # not actual unix; fix below
+    })
+    # Fix: mhw.detect returns ordinal days (integers). Convert back properly:
+    to_ts = lambda arr: pd.to_datetime([pd.Timestamp.fromordinal(int(d)) for d in arr])
+    df = pd.DataFrame({
+        "start_date": to_ts(res["time_start"]),
+        "end_date":   to_ts(res["time_end"]),
+        "duration_days": res["duration"],
+        "intensity_max_degC": res["intensity_max"],
+        "intensity_mean_degC": res["intensity_mean"],
+        "cumulative_intensity_degC": res["intensity_cumulative"]
+    })
+    return df
+
+# 1) Open files
+ds = open_sst(FILES_GLOB, chunks=chunks)
+
+# 2) Subset ROI &  'sst'
+ds_roi = subset_roi(ds, ROI, var=boxmean_var_name)
+da = ds_roi[boxmean_var_name]
+
+# 3) Inspect metadata
+print_metadata(ds_roi, var=boxmean_var_name)
+
+# 4) Quick map snapshot 
+try:
+    plot_snapshot_map(da, when=sample_map_date, vmin=None, vmax=None)
+except Exception as e:
+    print(f"[WARN] Map snapshot skipped: {e}")
+
+# 5) Box-mean 1-D series (area-weighted)
+da_box = area_weighted_boxmean(da).rename("sst_boxmean")
+plot_boxmean_series(da_box, title="Area-weighted SST box-mean (lat 0–25, lon 20–100)")
+
+# 6) Convert time to ordinal (for MHW) and run a first-pass detection (optional)
+res, clim = first_pass_mhw(da_box, climatologyPeriod=climatologyPeriod)
+
+# 7) Summarize events
+events_df = summarize_events_table(res)
+print("\n=== First 10 detected events (box-mean series) ===")
+display(events_df.head(10))
+
+# 8)  Plot threshold vs SST for a sample year
+#    clim['seas'] and clim['thresh'] are daily seasonal climatology and threshold (aligned to time)
+try:
+    t = da_box["time"].to_index()
+    ts = pd.Series(da_box.values, index=t)
+    year = 2019  # tweak
+    ts_y = ts[str(year)]
+    
+    # Build day-of-year indexed threshold for that year
+    # clim['thresh'] is per-day-of-year (366 length). Align by DOY.
+    doy = ts_y.index.dayofyear.values
+    # Clip DOY 366 for non-leap alignment
+    thresh = np.array(clim["thresh"])[doy - 1]
+    plt.figure(figsize=(9, 3.2))
+    plt.plot(ts_y.index, ts_y.values, label="SST box-mean")
+    plt.plot(ts_y.index, thresh, label="90th percentile thresh", linestyle="--")
+    plt.title(f"SST vs 90th-percentile threshold — {year}")
+    plt.xlabel("Time"); plt.ylabel("°C")
+    plt.legend()
+    plt.tight_layout(); plt.show()
+except Exception as e:
+    print(f"[WARN] Threshold overlay skipped: {e}")
