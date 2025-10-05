@@ -74,27 +74,20 @@ def first_pass_mhw(da_box: xr.DataArray,
 
 def summarize_events_table(res: dict) -> pd.DataFrame:
     """
-    Convert MHW 'res' dict to a tidy event table.
+    Convert marineHeatWaves 'res' dict to a tidy event table.
+    'time_*' in res are *ordinal* days (Python datetime.toordinal).
     """
-    # Each of these is a numpy array aligned by event index
-    cols = [
-        "event_start", "event_end", "duration",
-        "intensity_max", "intensity_mean", "intensity_cumulative"
-    ]
-    df = pd.DataFrame({
-        "event_start": pd.to_datetime(res["time_start"], origin="unix", unit="D")  # not actual unix; fix below
+    import numpy as np, pandas as pd
+    to_ts = lambda arr: pd.to_datetime([pd.Timestamp.fromordinal(int(d)) for d in np.asarray(arr)])
+
+    return pd.DataFrame({
+        "start_date":                   to_ts(res["time_start"]),
+        "end_date":                     to_ts(res["time_end"]),
+        "duration_days":                res["duration"],
+        "intensity_max_degC":           res["intensity_max"],
+        "intensity_mean_degC":          res["intensity_mean"],
+        "cumulative_intensity_degC":    res["intensity_cumulative"],
     })
-    # Fix: mhw.detect returns ordinal days (integers). Convert back properly:
-    to_ts = lambda arr: pd.to_datetime([pd.Timestamp.fromordinal(int(d)) for d in arr])
-    df = pd.DataFrame({
-        "start_date": to_ts(res["time_start"]),
-        "end_date":   to_ts(res["time_end"]),
-        "duration_days": res["duration"],
-        "intensity_max_degC": res["intensity_max"],
-        "intensity_mean_degC": res["intensity_mean"],
-        "cumulative_intensity_degC": res["intensity_cumulative"]
-    })
-    return df
 
 # 1) Open files
 ds = open_sst(FILES_GLOB, chunks=chunks)
