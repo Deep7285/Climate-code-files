@@ -1,0 +1,111 @@
+# Climatology & 90th-percentile (thresh) by regions
+
+from pathlib import Path
+from typing import Dict, Tuple, Optional
+import numpy as np, pandas as pd, xarray as xr
+import matplotlib.pyplot as plt
+
+#convert np.NaN for older numpy versions to avoid issues
+if not hasattr(np, "NaN"):
+    np.NaN = np.nan
+import marineHeatWaves as mhw
+
+FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+VAR = "sst"
+CLIM_YEARS: Tuple[int,int] = (1982, 2024)   # baseline you specified
+REGIONS: Dict[str, Dict[str, float]] = {
+    "ArabianSea":    {"lon_min": 20.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 25.0},
+    "BayOfBengal":   {"lon_min": 78.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+    "NorthIndianOc": {"lon_min": 20.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+}
+# overlay a year's SST vs 90th percentile if needed
+OVERLAY_YEAR: Optional[int] = None   # e.g., 2019 or None
+
+OUTDIR = Path("outputs"); OUTDIR.mkdir(parents=True, exist_ok=True)
+
+def open_mfdataset(files_glob: str, chunks={"time": 120}) -> xr.Dataset:
+    paths = sorted([str(p) for p in Path().glob(files_glob)])
+    if not paths:
+        raise FileNotFoundError(f"No files match: {files_glob}")
+    return xr.open_mfdataset(paths, combine="by_coords", parallel=True, chunks=chunks)
+
+def subset_box(ds: xr.Dataset, box: Dict[str, float]) -> xr.Dataset:
+    latn = "lat" if "lat" in ds.coords else "latitude"
+    lonn = "lon" if "lon" in ds.coords else "longitude"
+    return ds.sel({latn: slice(box["lat_min"], box["lat_max"]),
+                   lonn: slice(box["lon_min"], box["lon_max"])})
+
+def area_weighted_boxmean(da: xr.DataArray) -> xr.DataArray:
+    latn = "lat" if "lat" in da.coords else "latitude"
+    w = np.cos(np.deg2rad(da[latn]))
+    return da.weighted(w).mean(dim=[latn, "lon" if "lon" in da.coords else "longitude"])
+
+def mhw_climatology(da_box: xr.DataArray, clim_years: Tuple[int,int]) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Hobday/Oliver method via marineHeatWaves.detect:
+    returns (seas, thresh) of length 366 (leap-aware DOY).
+    """
+    t_index = da_box["time"].to_index()
+    # clip baseline to data span defensively
+    y0, y1 = max(clim_years[0], t_index.year.min()), min(clim_years[1], t_index.year.max())
+    ords = np.array([d.toordinal() for d in t_index], dtype=int)
+    temp = da_box.values.astype(float)
+    res, clim = mhw.detect(ords, temp,
+                           climatologyPeriod=[int(y0), int(y1)],
+                           pctile=90, minDuration=5, joinAcrossGaps=True)
+    seas   = np.array(clim["seas"])    # DOY climatology, length 366
+    thresh = np.array(clim["thresh"])  # DOY 90th percentile, length 366
+    return seas, thresh
+
+def plot_clim_and_thresh(seas: np.ndarray, thresh: np.ndarray, title: str):
+    doy = np.arange(1, len(seas)+1)  # 1..366
+    plt.figure(figsize=(9,3.2))
+    plt.plot(doy, seas,   label="Climatology (seas)")
+    plt.plot(doy, thresh, label="90th percentile (thresh)", linestyle="--")
+    plt.xlabel("Day of Year"); plt.ylabel("°C"); plt.title(title); plt.legend()
+    plt.tight_layout(); plt.show()
+
+def plot_sst_vs_thresh_for_year(da_box: xr.DataArray, thresh_doy: np.ndarray, year: int, title: str):
+    # map DOY thresholds (len 366) to each day of the selected year
+    s = pd.Series(da_box.values, index=da_box["time"].to_index())
+    s_y = s[str(year)]
+    if s_y.empty:
+        print(f"[warn] No data for year {year} in this series.")
+        return
+    doy = s_y.index.dayofyear.values
+    # use DOY directly (1..366) to index into thresh array
+    thresh_aligned = thresh_doy[doy - 1]
+    plt.figure(figsize=(9,3.2))
+    plt.plot(s_y.index, s_y.values, label="SST box-mean")
+    plt.plot(s_y.index, thresh_aligned, "--", label="90th percentile (thresh)")
+    plt.xlabel("Time"); plt.ylabel("°C"); plt.title(title); plt.legend()
+    plt.tight_layout(); plt.show()
+
+
+ds = open_mfdataset(FILES_GLOB, chunks={"time": 120})
+assert VAR in ds, f"{VAR} not found in dataset"
+
+for name, box in REGIONS.items():
+    print(f"\n=== Region: {name} ===")
+    da = subset_box(ds[[VAR]], box)[VAR]
+    da_box = area_weighted_boxmean(da).rename(f"sst_boxmean_{name}")
+
+    # Compute  climatology + 90th 
+    seas, thresh = mhw_climatology(da_box, CLIM_YEARS)
+
+    # Plot 1: Climatology & 90th percentile (separate figure)
+    plot_clim_and_thresh(seas, thresh,
+                         title=f"{name}: Climatology (seas) & 90th (thresh) — {CLIM_YEARS[0]}–{CLIM_YEARS[1]}")
+
+    # Plot 2 (optional): SST vs 90th percentile for a chosen year
+    if OVERLAY_YEAR is not None:
+        plot_sst_vs_thresh_for_year(
+            da_box, thresh, OVERLAY_YEAR,
+            title=f"{name}: SST vs 90th (thresh) — {OVERLAY_YEAR}"
+        )
+
+    # Save arrays for downstream steps
+    np.savez(OUTDIR / f"climatology_{name}_MHW_366.npz", seas=seas, thresh=thresh)
+    da_box.to_netcdf(OUTDIR / f"sst_boxmean_{name}_1982-2024.nc")
+
+print("\nDone.")
