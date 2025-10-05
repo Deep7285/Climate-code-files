@@ -1,3 +1,5 @@
+#data manupulations and plotting
+
 def area_weighted_boxmean(da: xr.DataArray) -> xr.DataArray:
     """
     Compute area-weighted mean over lat-lon for a 3D DataArray (time, lat, lon).
@@ -129,7 +131,7 @@ try:
     ts = pd.Series(da_box.values, index=t)
     year = 2019  # tweak
     ts_y = ts[str(year)]
-    
+
     # Build day-of-year indexed threshold for that year
     # clim['thresh'] is per-day-of-year (366 length). Align by DOY.
     doy = ts_y.index.dayofyear.values
