@@ -66,12 +66,12 @@ def build_mhw_mask(res: dict, full_index: pd.DatetimeIndex) -> pd.Series:
     return mask
 
 def plot_hobday_panel(t_index, sst, seas, thresh, is_mhw, title: str):
-    """Hobday-style: SST (black), climatology (blue), threshold (green), red shading for MHW."""
+    """Hobday-style: SST (black), climatology (blue), threshold (orange), red shading for MHW."""
     fig, ax = plt.subplots(figsize=(11, 3.4))
     # main lines
     ax.plot(t_index, sst, lw=0.8, color="k", label="SST")
     ax.plot(t_index, seas, lw=1.2, color="C0", label="Climatology")
-    ax.plot(t_index, thresh, lw=1.2, color="C2", label="Threshold")
+    ax.plot(t_index, thresh, lw=1.2, color="#ff7f0e", label="Threshold")
 
     # fill between SST and threshold: red where SST >= threshold (MHW)
     ax.fill_between(t_index, thresh, sst, where=(sst >= thresh), color="red", alpha=0.35, linewidth=0)
@@ -89,17 +89,41 @@ def plot_hobday_panel(t_index, sst, seas, thresh, is_mhw, title: str):
     fig.autofmt_xdate()
     plt.tight_layout(); plt.show()
 
-def plot_events_per_year_bar(events: pd.DataFrame, title: str):
-    """Bar chart: number of MHW events per year (counted by start year)."""
-    counts = events.groupby(events["start_date"].dt.year).size()
+def plot_events_per_year_bar(events: pd.DataFrame, title: str,
+                             start_year: int = None, end_year: int = None,
+                             tick_step: int = 2, annotate: bool = True):
+
+    # counts by start year
+    counts = events.groupby(events["start_date"].dt.year).size().sort_index()
+
+    # span from data unless explicitly provided
+    y0 = start_year if start_year is not None else int(counts.index.min())
+    y1 = end_year   if end_year   is not None else int(counts.index.max())
+
+    # include missing years with zero
+    all_years = np.arange(y0, y1 + 1, dtype=int)
+    counts = counts.reindex(all_years, fill_value=0)
+
     fig, ax = plt.subplots(figsize=(10, 3.0))
-    ax.bar(counts.index.astype(int), counts.values)
-    ax.set_xlabel("Year"); ax.set_ylabel("Number of MHW events")
+    ax.bar(all_years, counts.values, width=0.8, align="center")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Number of MHW events")
     ax.set_title(title)
-    # tidy x-axis
-    ax.xaxis.set_major_locator(YearLocator(base=2))
-    ax.xaxis.set_major_formatter(plt.matplotlib.ticker.StrMethodFormatter("{x:.0f}"))
-    plt.tight_layout(); plt.show()
+
+    # integer year ticks
+    ax.set_xticks(all_years[::tick_step])
+    ax.set_xticklabels([str(y) for y in all_years[::tick_step]])
+    ax.yaxis.set_major_locator(plt.matplotlib.ticker.MaxNLocator(integer=True))
+    ax.margins(x=0.01)
+
+    # optional labels above bars
+    if annotate:
+        for x, y in zip(all_years, counts.values):
+            if y > 0:
+                ax.text(x, y + 0.05, str(int(y)), ha="center", va="bottom", fontsize=8)
+
+    plt.tight_layout()
+    plt.show()
 
 
 ds = open_mfdataset(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
@@ -114,7 +138,7 @@ for name, box in REGIONS.items():
     t_index = da_box["time"].to_index()
     sst = da_box.values.astype(float)
 
-    # Run Hobday/Oliver detection (defaults: 90th pctile, minDuration=5, joinAcrossGaps=True, windowHalfWidth=5)
+    # Hobday/Oliver detection (defaults: 90th pctile, minDuration=5, joinAcrossGaps=True, windowHalfWidth=5)
     y0, y1 = max(CLIM_YEARS[0], t_index.year.min()), min(CLIM_YEARS[1], t_index.year.max())
     ords = np.array([d.toordinal() for d in t_index], dtype=int)
     res, clim = mhw.detect(ords, sst, climatologyPeriod=[int(y0), int(y1)], pctile=90)
@@ -132,7 +156,8 @@ for name, box in REGIONS.items():
                       title=f"{name} — SST, Climatology, Threshold, MHW (1982–2024)")
 
     # Bar chart: number of events per (start) year
-    plot_events_per_year_bar(events, title=f"{name} — Number of MHW events per year")
+    plot_events_per_year_bar(events, title=f"{name} — Number of MHW events per year", start_year=1982, end_year=2024, tick_step=2, annotate=True)
+
 
     # (Optional) Save artifacts
     out = Path("outputs")
