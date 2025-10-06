@@ -1,0 +1,139 @@
+# daily SST + Climatology + 90th + MHW detection + MHW events per year
+
+from glob import glob
+from pathlib import Path
+from typing import Dict, Tuple
+import numpy as np, pandas as pd, xarray as xr
+import matplotlib.pyplot as plt
+from matplotlib.dates import YearLocator, DateFormatter
+
+# convert to np.NaN if missing
+import numpy as _np
+if not hasattr(_np, "NaN"):
+    _np.NaN = _np.nan
+import marineHeatWaves as mhw
+
+
+FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+VAR = "sst"
+CLIM_YEARS: Tuple[int, int] = (1982, 2024)   # baseline for seas & thresh
+REGIONS: Dict[str, Dict[str, float]] = {
+    "ArabianSea":    {"lon_min": 20.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 25.0},
+    "BayOfBengal":   {"lon_min": 78.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+    "NorthIndianOc": {"lon_min": 20.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+}
+OUTDIR = Path("outputs"); OUTDIR.mkdir(parents=True, exist_ok=True)
+
+def open_mfdataset(paths_glob: str, chunks={"time": 120}, engine: str = "netcdf4") -> xr.Dataset:
+    paths = sorted(glob(paths_glob))
+    if not paths:
+        raise FileNotFoundError(f"No files match: {paths_glob}")
+    return xr.open_mfdataset(paths, combine="by_coords", parallel=True, chunks=chunks, engine=engine)
+
+def subset_box(ds: xr.Dataset, box: Dict[str, float]) -> xr.Dataset:
+    latn = "lat" if "lat" in ds.coords else "latitude"
+    lonn = "lon" if "lon" in ds.coords else "longitude"
+    return ds.sel({latn: slice(box["lat_min"], box["lat_max"]),
+                   lonn: slice(box["lon_min"], box["lon_max"])})
+
+def area_weighted_boxmean(da: xr.DataArray) -> xr.DataArray:
+    latn = "lat" if "lat" in da.coords else "latitude"
+    w = np.cos(np.deg2rad(da[latn]))
+    return da.weighted(w).mean(dim=[latn, "lon" if "lon" in da.coords else "longitude"])
+
+def events_df_from_res(res: dict) -> pd.DataFrame:
+    """Convert MHW 'res' dict (ordinal days) to a tidy table."""
+    to_ts = lambda arr: pd.to_datetime([pd.Timestamp.fromordinal(int(d)) for d in np.asarray(arr)])
+    return pd.DataFrame({
+        "start_date": to_ts(res["time_start"]),
+        "end_date":   to_ts(res["time_end"]),
+        "duration_days": res["duration"],
+        "intensity_max_degC": res["intensity_max"],
+        "intensity_mean_degC": res["intensity_mean"],
+        "cumulative_intensity_degC": res["intensity_cumulative"],
+    })
+
+def build_mhw_mask(res: dict, full_index: pd.DatetimeIndex) -> pd.Series:
+    """Daily boolean mask where MHW is active (SST >= threshold for >=5 days)."""
+    mask = pd.Series(False, index=full_index)
+    for s_ord, e_ord in zip(res["time_start"], res["time_end"]):
+        sdt = pd.Timestamp.fromordinal(int(s_ord))
+        edt = pd.Timestamp.fromordinal(int(e_ord))
+        # clamp to available index
+        sdt = max(sdt, full_index[0]); edt = min(edt, full_index[-1])
+        if sdt <= edt:
+            mask.loc[sdt:edt] = True
+    return mask
+
+def plot_hobday_panel(t_index, sst, seas, thresh, is_mhw, title: str):
+    """Hobday-style: SST (black), climatology (blue), threshold (green), red shading for MHW."""
+    fig, ax = plt.subplots(figsize=(11, 3.4))
+    # main lines
+    ax.plot(t_index, sst, lw=0.8, color="k", label="SST")
+    ax.plot(t_index, seas, lw=1.2, color="C0", label="Climatology")
+    ax.plot(t_index, thresh, lw=1.2, color="C2", label="Threshold")
+
+    # fill between SST and threshold: red where SST >= threshold (MHW)
+    ax.fill_between(t_index, thresh, sst, where=(sst >= thresh), color="red", alpha=0.35, linewidth=0)
+
+
+    # axes formatting
+    ax.set_ylabel("Temp (°C)")
+    ax.set_xlabel("Year")
+    ax.legend(loc="upper right")
+    ax.set_title(title)
+
+    # Year ticks
+    ax.xaxis.set_major_locator(YearLocator(base=2))         # every 2nd year (adjust if you like)
+    ax.xaxis.set_major_formatter(DateFormatter("%Y"))
+    fig.autofmt_xdate()
+    plt.tight_layout(); plt.show()
+
+def plot_events_per_year_bar(events: pd.DataFrame, title: str):
+    """Bar chart: number of MHW events per year (counted by start year)."""
+    counts = events.groupby(events["start_date"].dt.year).size()
+    fig, ax = plt.subplots(figsize=(10, 3.0))
+    ax.bar(counts.index.astype(int), counts.values)
+    ax.set_xlabel("Year"); ax.set_ylabel("Number of MHW events")
+    ax.set_title(title)
+    # tidy x-axis
+    ax.xaxis.set_major_locator(YearLocator(base=2))
+    ax.xaxis.set_major_formatter(plt.matplotlib.ticker.StrMethodFormatter("{x:.0f}"))
+    plt.tight_layout(); plt.show()
+
+
+ds = open_mfdataset(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
+assert VAR in ds, f"{VAR} not found in dataset"
+
+for name, box in REGIONS.items():
+    print(f"\n=== Region: {name} ===")
+    da = subset_box(ds[[VAR]], box)[VAR]
+    da_box = area_weighted_boxmean(da).rename(f"sst_boxmean_{name}")
+
+    # time & series
+    t_index = da_box["time"].to_index()
+    sst = da_box.values.astype(float)
+
+    # Run Hobday/Oliver detection (defaults: 90th pctile, minDuration=5, joinAcrossGaps=True, windowHalfWidth=5)
+    y0, y1 = max(CLIM_YEARS[0], t_index.year.min()), min(CLIM_YEARS[1], t_index.year.max())
+    ords = np.array([d.toordinal() for d in t_index], dtype=int)
+    res, clim = mhw.detect(ords, sst, climatologyPeriod=[int(y0), int(y1)], pctile=90)
+
+    # These are aligned to the daily series (same length as t_index)
+    seas   = np.asarray(clim["seas"], dtype=float)
+    thresh = np.asarray(clim["thresh"], dtype=float)
+
+    # Daily MHW mask and event table
+    is_mhw = build_mhw_mask(res, t_index)
+    events = events_df_from_res(res)
+
+    # Plot panel: daily SST + climatology + threshold + red MHW shading
+    plot_hobday_panel(t_index, sst, seas, thresh, is_mhw,
+                      title=f"{name} — SST, Climatology, Threshold, MHW (1982–2024)")
+
+    # Bar chart: number of events per (start) year
+    plot_events_per_year_bar(events, title=f"{name} — Number of MHW events per year")
+
+    # (Optional) Save artifacts
+    out = Path("outputs")
+    events.to_csv(out / f"mhw_events_{name}_1982-2024.csv", index=False)
