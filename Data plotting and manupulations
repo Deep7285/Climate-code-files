@@ -90,7 +90,7 @@ def summarize_events_table(res: dict) -> pd.DataFrame:
     })
 
 # 1) Open files
-ds = open_sst(FILES_GLOB, chunks=chunks)
+ds = open_sst(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
 
 # 2) Subset ROI &  'sst'
 ds_roi = subset_roi(ds, ROI, var=boxmean_var_name)
