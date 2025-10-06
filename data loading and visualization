@@ -20,35 +20,27 @@ sample_map_date: Optional[str] = None  # e.g., "2019-06-01"; if None, uses first
 boxmean_var_name = "sst"        # expected OISST variable name
 climatologyPeriod = [1982, 2024]  # WMO baseline for MHW detection
 
-# %% 
-def open_sst(files: Union[str, List[str]], chunks=None) -> xr.Dataset:
-    """
-    Open one or many NetCDF files with xarray.
-    - If `files` is a glob string, it will expand and open_mfdataset.
-    - If it's a list of paths, open them together.
-    - If it's a single file path, open_dataset.
-
-    Returns: xr.Dataset
-    """
+def open_sst(files, chunks=None, engine: str = "netcdf4") -> xr.Dataset:
     if isinstance(files, str):
         p = Path(files)
         if any(ch in files for ch in "*?[]"):
-            paths = sorted(str(fp) for fp in Path().glob(files))
+            paths = sorted(glob(files))
             if not paths:
                 raise FileNotFoundError(f"No files match glob: {files}")
-            ds = xr.open_mfdataset(paths, combine="by_coords", parallel=True, chunks=chunks)
+            return xr.open_mfdataset(paths, combine="by_coords",
+                                     parallel=True, chunks=chunks, engine=engine)
         else:
             if not p.exists():
                 raise FileNotFoundError(f"File not found: {files}")
-            ds = xr.open_dataset(files, chunks=chunks)
+            return xr.open_dataset(files, chunks=chunks, engine=engine)
     else:
-        # list of paths
         paths = [str(Path(f)) for f in files]
         for f in paths:
             if not Path(f).exists():
                 raise FileNotFoundError(f"File not found: {f}")
-        ds = xr.open_mfdataset(paths, combine="by_coords", parallel=True, chunks=chunks)
-    return ds
+        return xr.open_mfdataset(paths, combine="by_coords",
+                                 parallel=True, chunks=chunks, engine=engine)
+
 
 def subset_roi(ds: xr.Dataset, roi: Dict[str, float], var: str = "sst") -> xr.Dataset:
     """
