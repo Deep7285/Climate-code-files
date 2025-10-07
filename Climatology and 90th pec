@@ -12,7 +12,6 @@ if not hasattr(_np, "NaN"):
     _np.NaN = _np.nan
 import marineHeatWaves as mhw
 
-# --- CONFIG ---
 FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 VAR = "sst"
 CLIM_YEARS: Tuple[int,int] = (1982, 2024)   # per your spec
@@ -80,7 +79,7 @@ def plot_clim_and_thresh_doy(seas_doy: np.ndarray, thresh_doy: np.ndarray, title
     plt.xlabel("Day of Year"); plt.ylabel("Temp (°C)"); plt.title(title); plt.legend()
     plt.tight_layout(); plt.show()
 
-# --- run ---
+# data processing
 ds = open_mfdataset(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
 assert VAR in ds, f"{VAR} not found in dataset"
 

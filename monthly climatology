@@ -1,0 +1,38 @@
+# Averaged to month numbers using a leap reference year (e.g., 2000)
+_ref = pd.date_range("2000-01-01", "2000-12-31", freq="D")
+_doy_to_month = pd.Series(_ref.month.values, index=_ref.dayofyear.values) 
+
+ds = open_ds(FILES_GLOB, engine="netcdf4")
+t_index = pd.to_datetime(ds.time.values)
+ords = np.array([d.toordinal() for d in t_index], dtype=int)
+
+for name, box in REGIONS.items():
+    da = subset_box(ds[[VAR]], box)[VAR]
+    da_box = area_weighted_boxmean(da)  # (time,)
+    temp = da_box.values.astype(float)
+
+
+    y0, y1 = max(CLIM_YEARS[0], t_index.year.min()), min(CLIM_YEARS[1], t_index.year.max())
+    res, clim = mhw.detect(ords, temp, climatologyPeriod=[int(y0), int(y1)], pctile=90)
+    seas_full = np.asarray(clim["seas"], float)
+    doy = t_index.dayofyear.values
+
+    # averaged to 366-length curve
+    seas_366 = np.full(366, np.nan)
+    for d in range(1, 367):
+        m = (doy == d)
+        if m.any():
+            seas_366[d-1] = np.nanmean(seas_full[m])
+
+    # monthly climatology from seas (12 values)
+    months = np.arange(1, 13)
+    monthly_vals = np.array([np.nanmean(seas_366[_doy_to_month[_doy_to_month == m].index - 1])
+                             for m in months])
+
+    # plot
+    plt.figure(figsize=(7.5, 3))
+    plt.plot(months, monthly_vals, marker="o")
+    plt.xticks(months, ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"])
+    plt.ylabel("Temp (°C)"); plt.xlabel("Month")
+    plt.title(f"{name} — Monthly climatology of Hobday seas (1982–2024)")
+    plt.tight_layout(); plt.show()
