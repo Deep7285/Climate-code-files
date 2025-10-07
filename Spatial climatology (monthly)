@@ -31,15 +31,17 @@ def _seas_doy_for_pixel(temp_1d, ords, years, doy, clim_years):
     return seas_366
 
 def spatial_monthly_climatology(ds_region):
-    da = ds_region[VAR]  # (time, lat, lon)
+    da = ds_region[VAR].chunk({"time": -1, "lat": 80, "lon": 80})
+    # now call apply_ufunc as you already do
     seas_doy = xr.apply_ufunc(
-        _seas_doy_for_pixel, da,
-        input_core_dims=[["time"]],
-        output_core_dims=[["doy"]],
-        vectorize=True, dask="parallelized",
-        kwargs=dict(ords=ords, years=years, doy=doy, clim_years=CLIM_YEARS),
-        output_dtypes=[float], output_sizes={"doy": 366}
-    )  # (lat, lon, doy)
+    _seas_doy_for_pixel, da,
+    input_core_dims=[["time"]],
+    output_core_dims=[["doy"]],
+    vectorize=True, dask="parallelized",
+    kwargs=dict(ords=ords, years=years, doy=doy, clim_years=CLIM_YEARS),
+    output_dtypes=[float],
+    output_sizes={"doy": 366},
+    )
 
     # build month masks for DOY
     month_maps = []
