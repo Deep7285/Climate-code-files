@@ -13,6 +13,17 @@ def open_ds(globpat, chunks={"time": 120}, engine="netcdf4"):
     return xr.open_mfdataset(sorted(glob(globpat)), combine="by_coords",
                              chunks=chunks, engine=engine)
 
+def subset_box(ds: xr.Dataset, box: Dict[str, float]) -> xr.Dataset:
+    latn = "lat" if "lat" in ds.coords else "latitude"
+    lonn = "lon" if "lon" in ds.coords else "longitude"
+    return ds.sel({latn: slice(box["lat_min"], box["lat_max"]),
+                   lonn: slice(box["lon_min"], box["lon_max"])})
+
+def area_weighted_boxmean(da: xr.DataArray) -> xr.DataArray:
+    latn = "lat" if "lat" in da.coords else "latitude"
+    w = np.cos(np.deg2rad(da[latn]))
+    return da.weighted(w).mean(dim=[latn, "lon" if "lon" in da.coords else "longitude"])
+
 ds = open_ds(FILES_GLOB, engine="netcdf4")
 
 # compute monthly curves for each region once
