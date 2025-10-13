@@ -1,25 +1,29 @@
+# Ckecking the files and Summarize the data
+
+from glob import glob
 
 # file path: data loading and visualization for single file path like "data_raw/oisst_1982-2024.nc"
-FILES_GLOB = "data_raw/sst.day.mean.*.nc" 
+FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 
 # spatial region of interest (ROI) for subsetting
 ROI = dict(lat_min=0.0, lat_max=25.0, lon_min=20.0, lon_max=100.0)
 
 # North indian ocean subregions
 REGIONS = {
-    # NOTE: Values preserved exactly as provided; we can revisit if lat/lon were swapped.
-    "ArabianSea":    {"lon_min": 20.0, "lon_max": 78.0, "lat_min": 0.0,  "lat_max": 25.0},
-    "BayOfBengal":   {"lon_min": 78.0, "lon_max": 100.0,"lat_min": 0.0,  "lat_max": 25.0},
-    "NorthIndianOc": {"lon_min": 20.0, "lon_max": 100.0,"lat_min": 0.0,  "lat_max": 25.0},
+    # Regional bounds for subsetting with lat and lon in degrees
+    "Arabian Sea":    {"lon_min": 20.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 25.0},
+    "Bay Of Bengal":   {"lon_min": 78.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+    "North Indian Ocean": {"lon_min": 20.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
 }
 
 # IO / plotting options
 use_dask = True                 # set False to fully load into memory
 chunks = {"time": 90} if use_dask else None
 sample_map_date: Optional[str] = None  # e.g., "2019-06-01"; if None, uses first time step found
-boxmean_var_name = "sst"        # expected OISST variable name
-climatologyPeriod = [1982, 2024]  # WMO baseline for MHW detection
+boxmean_var_name = "sst"       
+climatologyPeriod = [1982, 2024]  
 
+# loading the data
 def open_sst(files, chunks=None, engine: str = "netcdf4") -> xr.Dataset:
     if isinstance(files, str):
         p = Path(files)
@@ -41,12 +45,10 @@ def open_sst(files, chunks=None, engine: str = "netcdf4") -> xr.Dataset:
         return xr.open_mfdataset(paths, combine="by_coords",
                                  parallel=True, chunks=chunks, engine=engine)
 
-
+# Subset to region of interest (ROI)
 def subset_roi(ds: xr.Dataset, roi: Dict[str, float], var: str = "sst") -> xr.Dataset:
-    """
-    Subset dataset to ROI bounds. Assumes lon is in [0, 360) (OISST-style) and lat in [-90, 90].
-    """
-    # Make sure coords are named commonly; adapt here if your files use different names.
+
+    # Make sure coords are named commonly
     lat_name = "lat" if "lat" in ds.coords else "latitude"
     lon_name = "lon" if "lon" in ds.coords else "longitude"
 
@@ -62,17 +64,10 @@ def subset_roi(ds: xr.Dataset, roi: Dict[str, float], var: str = "sst") -> xr.Da
     else:
         raise KeyError(f"Variable '{var}' not found. Available: {list(ds2.data_vars)}")
 
+# Print concise metadata
 def print_metadata(ds: xr.Dataset, var: str = "sst") -> None:
-    """
-    Print concise metadata: dims, coords, time coverage, attrs, and variable attributes.
-    """
+    
     # Dim sizes
-    print("=== Dimensions ===")
-    for k, v in ds.dims.items():
-        print(f"{k}: {v}")
-
-    # Coordinates preview
-    print("\n=== Coordinates (first few) ===")
     for c in ds.coords:
         arr = ds.coords[c]
         try:
@@ -82,7 +77,7 @@ def print_metadata(ds: xr.Dataset, var: str = "sst") -> None:
             preview = arr
         print(f"{c}: {preview}")
 
-    # Time coverage
+    # convert time 
     if "time" in ds.coords:
         t = pd.to_datetime(ds["time"].values)
         print("\n=== Time Coverage ===")
@@ -97,4 +92,37 @@ def print_metadata(ds: xr.Dataset, var: str = "sst") -> None:
     if var in ds:
         print(f"\n=== Variable '{var}' attributes ===")
         for k, v in ds[var].attrs.items():
-            print(f"{k}: {v}")
+            print(f"{k}: {v}") 
+            print("=== Dimensions ===")
+    for k, v in ds.dims.items():
+        print(f"{k}: {v}")
+
+    # Coordinates preview
+    print("\n=== Coordinates (first few) ===")
+   
+def summarize_events_table(res: dict) -> pd.DataFrame:
+    """
+    Convert marineHeatWaves 'res' dict to a tidy event table.
+    'time_*' in res are *ordinal* days (Python datetime.toordinal).
+    """
+    import numpy as np, pandas as pd
+    to_ts = lambda arr: pd.to_datetime([pd.Timestamp.fromordinal(int(d)) for d in np.asarray(arr)])
+
+    return pd.DataFrame({
+        "start_date":                   to_ts(res["time_start"]),
+        "end_date":                     to_ts(res["time_end"]),
+        "duration_days":                res["duration"],
+        "intensity_max_degC":           res["intensity_max"],
+        "intensity_mean_degC":          res["intensity_mean"],
+        "cumulative_intensity_degC":    res["intensity_cumulative"],
+    })
+
+# 1) Open files
+ds = open_sst(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
+
+# 2) Subset ROI &  'sst'
+ds_roi = subset_roi(ds, ROI, var=boxmean_var_name)
+da = ds_roi[boxmean_var_name]
+
+# 3) Inspect metadata
+print_metadata(ds_roi, var=boxmean_var_name)
