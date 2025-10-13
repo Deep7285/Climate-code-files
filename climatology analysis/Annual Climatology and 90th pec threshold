@@ -1,28 +1,30 @@
-# Climatology and 90th percentile threshold for ArabianSea, BayOfBengal, NorthIndianOc
+# Climatology (Annual) of Arabian Sea, Bay Of Bengal, North Indian Ocean
 
 from glob import glob
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 import numpy as np, pandas as pd, xarray as xr
 import matplotlib.pyplot as plt
+import datetime as dt
+import matplotlib.dates as mdates
 
-# convert to np.NaN if missing
+# convert np.NAN to np.nan to avoid dependency issues
 import numpy as _np
 if not hasattr(_np, "NaN"):
     _np.NaN = _np.nan
-import marineHeatWaves as mhw
 
+# File path
 FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 VAR = "sst"
-CLIM_YEARS: Tuple[int,int] = (1982, 2024)   # per your spec
+CLIM_YEARS: Tuple[int,int] = (1982, 2024)   
 REGIONS: Dict[str, Dict[str, float]] = {
-    "ArabianSea":    {"lon_min": 20.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 25.0},
-    "BayOfBengal":   {"lon_min": 78.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
-    "NorthIndianOc": {"lon_min": 20.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+    "Arabian Sea":    {"lon_min": 20.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 25.0},
+    "Bay Of Bengal":   {"lon_min": 78.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+    "North Indian Ocean": {"lon_min": 20.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
 }
 OUTDIR = Path("outputs"); OUTDIR.mkdir(parents=True, exist_ok=True)
 
-# --- helpers ---
+
 def open_mfdataset(paths_glob: str, chunks={"time": 120}, engine: str = "netcdf4") -> xr.Dataset:
     paths = sorted(glob(paths_glob))
     if not paths:
@@ -43,10 +45,11 @@ def area_weighted_boxmean(da: xr.DataArray) -> xr.DataArray:
 
 def mhw_seas_thresh_doy(da_box: xr.DataArray, clim_years: Tuple[int,int]) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Run marineHeatWaves.detect, then convert returned per-day series (full length)
+    Run marineHeatWaves.detect, then convert returned per-day series 
     to Day-Of-Year climatology (length 366) by grouping over DOY.
     """
     t_index = da_box["time"].to_index()
+
     # safety-clip baseline to data span
     y0, y1 = max(clim_years[0], t_index.year.min()), min(clim_years[1], t_index.year.max())
 
@@ -56,7 +59,7 @@ def mhw_seas_thresh_doy(da_box: xr.DataArray, clim_years: Tuple[int,int]) -> Tup
                            climatologyPeriod=[int(y0), int(y1)],
                            pctile=90, minDuration=5, joinAcrossGaps=True)
 
-    # clim['seas'] and clim['thresh'] are aligned to the full time series (≈15k days).
+    # clim['seas'] and clim['thresh'] are aligned to the full time series 
     seas_full   = np.asarray(clim["seas"])
     thresh_full = np.asarray(clim["thresh"])
 
@@ -64,40 +67,47 @@ def mhw_seas_thresh_doy(da_box: xr.DataArray, clim_years: Tuple[int,int]) -> Tup
     doy = t_index.dayofyear.values
     seas_366   = np.full(366, np.nan, float)
     thresh_366 = np.full(366, np.nan, float)
-    for d in range(1, 367):  # 1..366
+    for d in range(1, 367): 
         m = (doy == d)
         if m.any():
             seas_366[d-1]   = np.nanmean(seas_full[m])
             thresh_366[d-1] = np.nanmean(thresh_full[m])
     return seas_366, thresh_366
 
-def plot_clim_and_thresh_doy(seas_doy: np.ndarray, thresh_doy: np.ndarray, title: str):
-    x = np.arange(1, 367)  # 1..366
-    plt.figure(figsize=(9,3.2))
-    plt.plot(x, seas_doy,   label="Climatology (seas)")
-    plt.plot(x, thresh_doy, "--", label="90th percentile (thresh)")
-    plt.xlabel("Day of Year"); plt.ylabel("Temp (°C)"); plt.title(title); plt.legend()
-    plt.tight_layout(); plt.show()
+# load once
+ds = open_mfdataset(FILES_GLOB, chunks={"time": 120})
 
-# data processing
-ds = open_mfdataset(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
-assert VAR in ds, f"{VAR} not found in dataset"
-
+# Compute curves per region and store
+curves = {}  
 for name, box in REGIONS.items():
-    print(f"\n=== Region: {name} ===")
     da = subset_box(ds[[VAR]], box)[VAR]
-    da_box = area_weighted_boxmean(da).rename(f"sst_boxmean_{name}")
-
+    da_box = area_weighted_boxmean(da)
     seas_doy, thresh_doy = mhw_seas_thresh_doy(da_box, CLIM_YEARS)
+    curves[name] = {"seas": seas_doy, "thresh": thresh_doy}
 
-    # plot (separate figure per region) with x-axis = 1..366
-    plot_clim_and_thresh_doy(seas_doy, thresh_doy,
-        title=f"{name}: Climatology (seas) & 90th (thresh) — {CLIM_YEARS[0]}–{CLIM_YEARS[1]}")
+# Plotting three stacked panels with shared X-axis
+x_dates = pd.date_range("2000-01-01", "2000-12-31", freq="D")  # length 366
 
-    # save outputs for downstream use
-    np.savez(OUTDIR / f"climatology_{name}_MHW_DOY366.npz",
-             seas=seas_doy, thresh=thresh_doy)
-    da_box.to_netcdf(OUTDIR / f"sst_boxmean_{name}_1982-2024.nc")
+fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 8), sharex=True, constrained_layout=True)
 
-print("\nDone.")
+# use common y-limits for comparability
+all_vals = np.concatenate([np.r_[v["seas"], v["thresh"]] for v in curves.values()])
+ymin = float(np.nanmin(all_vals)) - 0.2
+ymax = float(np.nanmax(all_vals)) + 0.2 
 
+
+for ax, (name, ct) in zip(axes, curves.items()):
+    ax.plot(x_dates, ct["seas"],   label="Climatology (Annual)", color="C0", lw=1.6)
+    ax.plot(x_dates, ct["thresh"], label="90th perc Threshold", ls="--", color= "#ff7f0e", lw=1.6)
+    ax.set_ylabel("Temp (°C)")
+    ax.set_title(f"{name}: Annual Climatology & 90th perc Threshold ({CLIM_YEARS[0]}–{CLIM_YEARS[1]})")
+    ax.legend(loc="upper right")
+    ax.set_ylim(ymin, ymax)
+
+# format the shared x-axis on the bottom subplot
+axes[-1].xaxis.set_major_locator(mdates.MonthLocator(bymonthday=1))
+axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+axes[-1].set_xlim(x_dates[0], x_dates[-1])
+axes[-1].set_xlabel("Day of Year")
+
+plt.show()
