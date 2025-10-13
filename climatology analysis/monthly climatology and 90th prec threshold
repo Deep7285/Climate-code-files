@@ -1,0 +1,87 @@
+#data preprocessimg and setting regions
+
+from glob import glob
+from pathlib import Path
+from typing import Dict, Tuple, Optional
+
+
+# leap-aware mapping DOY→month (has 366 days)
+_ref = pd.date_range("1982-01-01", "2024-12-31", freq="D")
+_doy_to_month = pd.Series(_ref.month.values, index=_ref.dayofyear.values) 
+
+def open_ds(globpat, chunks={"time": 120}, engine="netcdf4"):
+    return xr.open_mfdataset(sorted(glob(globpat)), combine="by_coords",
+                             chunks=chunks, engine=engine)
+
+ds = open_ds(FILES_GLOB, engine="netcdf4")
+
+# compute monthly curves for each region once
+results = {}  
+
+for name, box in REGIONS.items():
+    da = subset_box(ds[[VAR]], box)[VAR]
+    da_box = area_weighted_boxmean(da)  
+
+    # select the box mean time series
+    t_index = pd.to_datetime(da_box.time.values)                   
+    ords = np.array([d.toordinal() for d in t_index], dtype=int)
+    y0, y1 = max(CLIM_YEARS[0], t_index.year.min()), min(CLIM_YEARS[1], t_index.year.max())
+    res, clim = mhw.detect(ords, da_box.values.astype(float),
+                           climatologyPeriod=[int(y0), int(y1)], pctile=90)
+
+    seas_full   = np.asarray(clim["seas"],   float)                 
+    thresh_full = np.asarray(clim["thresh"], float)                
+    doy = t_index.dayofyear.values                                 
+
+    # collapse arrays (366 values each)
+    seas_366   = np.full(366, np.nan)
+    thresh_366 = np.full(366, np.nan)
+    for d in range(1, 367):
+        m = (doy == d)
+        if m.any():
+            seas_366[d-1]   = np.nanmean(seas_full[m])
+            thresh_366[d-1] = np.nanmean(thresh_full[m])
+
+    # monthly means from DOY arrays 
+    months = np.arange(1, 13)
+    monthly_seas = np.array([
+        np.nanmean(seas_366[_doy_to_month[_doy_to_month == m].index - 1]) for m in months
+    ])
+    monthly_thresh = np.array([
+        np.nanmean(thresh_366[_doy_to_month[_doy_to_month == m].index - 1]) for m in months
+    ])
+    results[name] = {"monthly_seas": monthly_seas, "monthly_thresh": monthly_thresh}
+
+# plot both curves
+month_labels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+x= np.arange(1,13)
+region_order = list(REGIONS.keys())
+fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 8), sharex=True, constrained_layout=True)
+all_vals= []
+for nm in region_order:
+    all_vals.append(results[nm]["monthly_seas"])
+    all_vals.append(results[nm]["monthly_thresh"])
+all_vals = np.concatenate(all_vals)
+
+# use common y-limits for comparability
+ymin = float(np.nanmin(all_vals)) - 0.2
+ymax = float(np.nanmax(all_vals)) + 0.2 
+
+
+for ax, nm in zip(axes, region_order):
+    ms= results[nm]["monthly_seas"]
+    mt= results[nm]["monthly_thresh"]
+    ax.plot(x,ms, marker="o",   label="Climatology (Monthly)", color="C0", lw=1.6)
+    ax.plot(x, mt, marker="s", label="90th perc Threshold", ls="--", color= "#ff7f0e", lw=1.6)
+    ax.set_ylabel("Temp (°C)")
+    ax.set_title(f"{nm}: Monthly Climatology & 90th perc Threshold ({CLIM_YEARS[0]}–{CLIM_YEARS[1]})")
+    ax.legend(loc="upper right")
+    ax.set_ylim(ymin, ymax)
+
+# format the shared x-axis on the bottom subplot
+axes[-1].set_xticks(x)
+axes[-1].set_xticklabels(month_labels)
+axes[-1].set_xlabel("Month")
+
+plt.show()
