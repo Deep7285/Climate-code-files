@@ -1,0 +1,56 @@
+# Spatial map of north indian ocean
+from glob import glob
+from pathlib import Path
+import numpy as np, xarray as xr, pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, BoundaryNorm
+
+# data loading
+FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+VAR = "sst"
+YEARS = (1982, 2024)
+ROI = {"lat_min": 0.0, "lat_max": 25.0, "lon_min": 40.0, "lon_max": 100.0}
+
+
+# Min -max color levels & discrete steps
+V_MIN, V_MAX, V_STEP = 20, 33, 1.5
+LEVELS = np.arange(V_MIN, V_MAX + V_STEP, V_STEP)
+
+# Color Palette: light cream to deep red 
+PALETTE = [
+    "#fff5e6", "#fee9cc", "#fedcab", "#fdc27a", "#fda85a",
+    "#fb8f3d", "#f07026", "#dc4e1a", "#c02f0f"
+]
+
+CMAP = ListedColormap(PALETTE)
+NORM = BoundaryNorm(LEVELS, ncolors=CMAP.N, clip=False)  
+
+# Open data & subset region/time of interest (ROI)
+def open_roi(files_glob, roi, years, engine="netcdf4"):
+    paths = sorted(glob(files_glob))
+    if not paths:
+        raise FileNotFoundError("No files found.")
+    ds = xr.open_mfdataset(paths, combine="by_coords", parallel=True,
+                           chunks={"time": 120}, engine=engine)
+    # define coords names
+    latn = "lat" if "lat" in ds.coords else "latitude"
+    lonn = "lon" if "lon" in ds.coords else "longitude"
+    # spatial subset
+    ds = ds.sel({latn: slice(roi["lat_min"], roi["lat_max"]),
+                 lonn: slice(roi["lon_min"], roi["lon_max"])})
+    # temporal subset
+    ds = ds.sel(time=slice(f"{years[0]}-01-01", f"{years[1]}-12-31"))
+    return ds, latn, lonn
+
+# plotting function
+def plot_map(data2d: xr.DataArray, latn: str, lonn: str, title: str):
+    plt.figure(figsize=(7.8, 4.6))
+    im = plt.pcolormesh(data2d[lonn], data2d[latn], data2d,
+                        shading="auto", cmap=CMAP, norm=NORM)
+    plt.xlabel("Longitude"); plt.ylabel("Latitude")
+    plt.title(title)
+    cbar = plt.colorbar(im, orientation="vertical", extend="max", pad=0.02)
+    cbar.set_label("Temp (°C)")
+    cbar.set_ticks(LEVELS)
+    cbar.ax.set_yticklabels([f"{lv:.1f}" for lv in LEVELS])
+    plt.tight_layout(); plt.show()
