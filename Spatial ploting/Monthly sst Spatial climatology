@@ -1,0 +1,22 @@
+# Monthly mean spatial maps
+ds, latn, lonn = open_roi(FILES_GLOB, ROI, YEARS, 
+da = ds[VAR]
+# mean for each calendar month across all years  
+monthly = da.groupby("time.month").mean("time", skipna=True)
+
+# Plot a 3x4 grid
+fig, axes = plt.subplots(3, 4, figsize=(12, 7), constrained_layout=True)
+for m in range(1, 13):
+    ax = axes[(m-1)//4, (m-1)%4]
+    im = ax.pcolormesh(monthly[lonn], monthly[latn], monthly.sel(month=m),
+                       shading="auto", cmap=CMAP, norm=NORM)
+    ax.set_title(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m-1])
+    ax.set_xlabel("Lon"); ax.set_ylabel("Lat")
+
+# shared colorbar 
+cbar = fig.colorbar(im, ax=axes, orientation="vertical", extend="max", fraction=0.025, pad=0.02)
+cbar.set_label("Temp (°C)")
+cbar.set_ticks(LEVELS)
+cbar.ax.set_yticklabels([f"{lv:.1f}" for lv in LEVELS])
+fig.suptitle("Monthly Mean SST of North Indian Ocean (1982–2024)", y=1.02)
+plt.show()
