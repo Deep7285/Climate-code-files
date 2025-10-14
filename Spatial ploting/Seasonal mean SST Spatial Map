@@ -1,0 +1,22 @@
+# Seasonal mean spatial maps of Dec-Jan-Feb (DJF), March-April-May (MAM), June-Jul-Aug (JJA), Sept-Oct-Nov (SON)
+da = ds[VAR]
+# mean for each season across all years
+seasonal = da.groupby("time.season").mean("time", skipna=True) 
+
+# Seasons order DJF, MAM, JJA, SON
+season_order = ["DJF", "MAM", "JJA", "SON"]
+
+fig, axes = plt.subplots(2, 2, figsize=(10, 7), constrained_layout=True)
+for i, s in enumerate(season_order):
+    ax = axes[i//2, i%2]
+    im = ax.pcolormesh(seasonal[lonn], seasonal[latn], seasonal.sel(season=s),
+                       shading="auto", cmap=CMAP, norm=NORM)
+    ax.set_title(s)
+    ax.set_xlabel("Lon"); ax.set_ylabel("Lat")
+
+cbar = fig.colorbar(im, ax=axes, orientation="vertical", extend="max", fraction=0.03, pad=0.02)
+cbar.set_label("Temp (°C)")
+cbar.set_ticks(LEVELS)
+cbar.ax.set_yticklabels([f"{lv:.1f}" for lv in LEVELS])
+fig.suptitle("Seasonal Mean SST of North Indian Ocean (1982–2024)", y=1.02)
+plt.show()
