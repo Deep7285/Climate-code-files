@@ -1,4 +1,4 @@
-#data preprocessimg and setting regions
+# Monthly Climatology and 90th percentile Threshold of Arabian Sea, Bay Of Bengal, North Indian Ocean
 
 from glob import glob
 from pathlib import Path
