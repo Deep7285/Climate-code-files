@@ -5,3 +5,5 @@ annual_mean = da.mean("time", skipna=True)
 
 plot_map(annual_mean, latn, lonn,
          title="Annual Mean SST of North Indian Ocean (1982–2024)")
+
+
