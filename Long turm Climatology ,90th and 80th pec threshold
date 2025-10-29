@@ -1,5 +1,4 @@
-# Climatology (Annual) of Arabian Sea, Bay Of Bengal, North Indian Ocean
-
+# Long-term Climatology, 90th and 80th percentile Thresholds of Arabian Sea, Bay of Bengal, North Indian Ocean
 from glob import glob
 from pathlib import Path
 from typing import Dict, Tuple, Optional
@@ -44,10 +43,7 @@ def area_weighted_boxmean(da: xr.DataArray) -> xr.DataArray:
     return da.weighted(w).mean(dim=[latn, "lon" if "lon" in da.coords else "longitude"])
 
 def mhw_seas_thresh_doy(da_box: xr.DataArray, clim_years: Tuple[int,int]) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Run marineHeatWaves.detect, then convert returned per-day series 
-    to Day-Of-Year climatology (length 366) by grouping over DOY.
-    """
+
     t_index = da_box["time"].to_index()
 
     # safety-clip baseline to data span
@@ -55,26 +51,37 @@ def mhw_seas_thresh_doy(da_box: xr.DataArray, clim_years: Tuple[int,int]) -> Tup
 
     ords = np.array([d.toordinal() for d in t_index], dtype=int)
     temp = da_box.values.astype(float)
-    res, clim = mhw.detect(ords, temp,
+
+    # clim['seas'] and clim['thresh'] for the 90th percentile 
+    res_90th, clim_90th = mhw.detect(ords, temp,
                            climatologyPeriod=[int(y0), int(y1)],
                            pctile=90, minDuration=5, joinAcrossGaps=True)
 
-    # clim['seas'] and clim['thresh'] are aligned to the full time series 
-    seas_full   = np.asarray(clim["seas"])
-    thresh_full = np.asarray(clim["thresh"])
+    seas_full   = np.asarray(clim_90th["seas"])
+    thresh_90th_full = np.asarray(clim_90th["thresh"])
+
+    # clim['seas'] and clim['thresh'] for the 80th percentile 
+    res_80th, clim_80th = mhw.detect(ords, temp,
+                           climatologyPeriod=[int(y0), int(y1)],
+                           pctile=80, minDuration=5, joinAcrossGaps=True)
+
+    thresh_80th_full = np.asarray(clim_80th["thresh"])
+
 
     # Group by day-of-year to get 366-length curves (leap-aware).
     doy = t_index.dayofyear.values
     seas_366   = np.full(366, np.nan, float)
-    thresh_366 = np.full(366, np.nan, float)
+    thresh_90th_366 = np.full(366, np.nan, float)
+    thresh_80th_366 = np.full(366, np.nan, float)
     for d in range(1, 367): 
         m = (doy == d)
         if m.any():
             seas_366[d-1]   = np.nanmean(seas_full[m])
-            thresh_366[d-1] = np.nanmean(thresh_full[m])
-    return seas_366, thresh_366
+            thresh_90th_366[d-1] = np.nanmean(thresh_90th_full[m])
+            thresh_80th_366[d-1] = np.nanmean(thresh_80th_full[m])
+    return seas_366, thresh_90th_366, thresh_80th_366
 
-# load once
+# load data
 ds = open_mfdataset(FILES_GLOB, chunks={"time": 120})
 
 # Compute curves per region and store
@@ -82,32 +89,38 @@ curves = {}
 for name, box in REGIONS.items():
     da = subset_box(ds[[VAR]], box)[VAR]
     da_box = area_weighted_boxmean(da)
-    seas_doy, thresh_doy = mhw_seas_thresh_doy(da_box, CLIM_YEARS)
-    curves[name] = {"seas": seas_doy, "thresh": thresh_doy}
+    seas_doy, thresh_90th_doy, thresh_80th_doy = mhw_seas_thresh_doy(da_box, CLIM_YEARS)
+    curves[name] = {"seas": seas_doy, "90th thresh": thresh_90th_doy, "80th thresh": thresh_80th_doy}
 
 # Plotting three stacked panels with shared X-axis
-x_dates = pd.date_range("2000-01-01", "2000-12-31", freq="D")  # length 366
+x_dates = pd.date_range("2000-01-01", "2000-12-31", freq="D")  
 
 fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 8), sharex=True, constrained_layout=True)
 
 # use common y-limits for comparability
-all_vals = np.concatenate([np.r_[v["seas"], v["thresh"]] for v in curves.values()])
+all_vals = np.concatenate([np.r_[v["seas"], v["90th thresh"], v["80th thresh"]] for v in curves.values()])
 ymin = float(np.nanmin(all_vals)) - 0.2
 ymax = float(np.nanmax(all_vals)) + 0.2 
 
 
 for ax, (name, ct) in zip(axes, curves.items()):
     ax.plot(x_dates, ct["seas"],   label="Climatology (Annual)", color="C0", lw=1.6)
-    ax.plot(x_dates, ct["thresh"], label="90th perc Threshold", ls="--", color= "#ff7f0e", lw=1.6)
+    ax.plot(x_dates, ct["90th thresh"], label="90th perc Threshold", ls="--", color= "#ff7f0e", lw=1.6)
+    ax.plot(x_dates, ct["80th thresh"], label="80th perc Threshold", ls="--", color= "#24fa11", lw=1.6)
     ax.set_ylabel("Temp (°C)")
-    ax.set_title(f"{name}: Annual Climatology & 90th perc Threshold ({CLIM_YEARS[0]}–{CLIM_YEARS[1]})")
+    ax.set_title(f"{name}: Long turm Climatology, 90th and 8th perc Threshold ({CLIM_YEARS[0]}–{CLIM_YEARS[1]})")
     ax.legend(loc="upper right")
     ax.set_ylim(ymin, ymax)
 
-# format the shared x-axis on the bottom subplot
-axes[-1].xaxis.set_major_locator(mdates.MonthLocator(bymonthday=1))
+year = 2000  
+tick_dates = []
+for m in range(1, 13):
+    tick_dates.append(pd.Timestamp(year, m, 1))
+    tick_dates.append(pd.Tim<Figure size 1100x800 with 3 Axes>estamp(year, m, 15))
+tick_dates.append(pd.Timestamp(year, 12, 31))  
+
+axes[-1].set_xticks(tick_dates)
 axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
 axes[-1].set_xlim(x_dates[0], x_dates[-1])
 axes[-1].set_xlabel("Day of Year")
-
-plt.show()
+fig.autofmt_xdate()
