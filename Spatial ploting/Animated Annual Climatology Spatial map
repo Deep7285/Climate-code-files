@@ -96,3 +96,5 @@ except Exception as e:
     print(f"Saved GIF: {OUT_GIF}")
 
 plt.close(fig)
+
+
