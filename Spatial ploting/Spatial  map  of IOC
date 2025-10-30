@@ -4,6 +4,8 @@ from pathlib import Path
 import numpy as np, xarray as xr, pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
+import cmocean.cm as cmo
+
 
 # data loading
 FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
@@ -13,13 +15,14 @@ ROI = {"lat_min": 0.0, "lat_max": 25.0, "lon_min": 40.0, "lon_max": 100.0}
 
 
 # Min -max color levels & discrete steps
-V_MIN, V_MAX, V_STEP = 20, 33, 1.5
+V_MIN, V_MAX, V_STEP = 26, 30, 0.25
 LEVELS = np.arange(V_MIN, V_MAX + V_STEP, V_STEP)
 
 # Color Palette: light cream to deep red 
 PALETTE = [
-    "#fff5e6", "#fee9cc", "#fedcab", "#fdc27a", "#fda85a",
-    "#fb8f3d", "#f07026", "#dc4e1a", "#c02f0f"
+    "#f9f5e7", "#f2ebd2", "#eedeb7", "#e8cea1","#e5c592", "#e3bd83",
+          "#e0ad6a", "#dc9c55", "#d88943", "#d47635", "#cf652b",
+          "#c94f23", "#c03b1c", "#b62c18", "#a92014", "#99150f"
 ]
 
 CMAP = ListedColormap(PALETTE)
@@ -45,12 +48,28 @@ def open_roi(files_glob, roi, years, engine="netcdf4"):
 # plotting function
 def plot_map(data2d: xr.DataArray, latn: str, lonn: str, title: str):
     plt.figure(figsize=(7.8, 4.6))
+    #assiging the land color (NAN values)
+    cmap_land = CMAP.copy()
+    cmap_land.set_bad(color= "#d3d3d3") # light gray for land
     im = plt.pcolormesh(data2d[lonn], data2d[latn], data2d,
-                        shading="auto", cmap=CMAP, norm=NORM)
+                        shading="auto", cmap=cmap_land, norm=NORM)
     plt.xlabel("Longitude"); plt.ylabel("Latitude")
     plt.title(title)
     cbar = plt.colorbar(im, orientation="vertical", extend="max", pad=0.02)
     cbar.set_label("Temp (°C)")
     cbar.set_ticks(LEVELS)
     cbar.ax.set_yticklabels([f"{lv:.1f}" for lv in LEVELS])
+    ax= plt.gca()
+    #x and y lables formatting
+    xticks= np.arange(40, 101, 10)
+    yticks= np.arange(0, 26, 5)
+    ax.set_xticks(xticks); ax.set_yticks(yticks)
+    xlabels= [f"{lon}°E" for lon in xticks]
+    ylabels= []
+    for lat in yticks:
+        if lat == 0:
+            ylabels.append("0°")
+        else:
+            ylabels.append(f"{lat}°N")
+    ax.set_xticklabels(xlabels); ax.set_yticklabels(ylabels)
     plt.tight_layout(); plt.show()
