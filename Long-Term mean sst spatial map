@@ -2,7 +2,6 @@
 ds, latn, lonn = open_roi(FILES_GLOB, ROI, YEARS, engine="netcdf4")
 da = ds[VAR]                    
 annual_mean = da.mean("time", skipna=True)   
-plot_map(annual_mean, latn, lonn,
-         title="Long-Term Mean SST of North Indian Ocean (1982–2024)")
+plot_map(annual_mean, latn, lonn, title="Long-Term Mean SST of North Indian Ocean (1982–2024)")
 
 
