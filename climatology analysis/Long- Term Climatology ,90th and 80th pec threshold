@@ -108,7 +108,7 @@ for ax, (name, ct) in zip(axes, curves.items()):
     ax.plot(x_dates, ct["90th thresh"], label="90th perc Threshold", ls="--", color= "#ff7f0e", lw=1.6)
     ax.plot(x_dates, ct["80th thresh"], label="80th perc Threshold", ls="--", color= "#24fa11", lw=1.6)
     ax.set_ylabel("Temp (°C)")
-    ax.set_title(f"{name}: Long turm Climatology, 90th and 8th perc Threshold ({CLIM_YEARS[0]}–{CLIM_YEARS[1]})")
+    ax.set_title(f"{name}: Long- term Climatology, 90th and 8th perc Threshold ({CLIM_YEARS[0]}–{CLIM_YEARS[1]})")
     ax.legend(loc="upper right")
     ax.set_ylim(ymin, ymax)
 
@@ -124,3 +124,4 @@ axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
 axes[-1].set_xlim(x_dates[0], x_dates[-1])
 axes[-1].set_xlabel("Day of Year")
 fig.autofmt_xdate()
+
