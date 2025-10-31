@@ -66,10 +66,7 @@ for name, box in REGIONS.items():
     ords = np.array([d.toordinal() for d in time_np], dtype=int)
 
     # clim['seas'] and clim['thresh'] for the 90th percentile 
-    res90, clim90 = mhw.detect(
-        ords, temp_np, climatologyPeriod=[y0, y1],
-        pctile=90, minDuration=5, joinAcrossGaps=True
-    )
+    res90, clim90 = mhw.detect(ords, temp_np, climatologyPeriod=[y0, y1],pctile=90, minDuration=5, joinAcrossGaps=True)
     seas_full     = np.asarray(clim90["seas"],   dtype=float)  # daily, same length as time_np
     thresh90_full = np.asarray(clim90["thresh"], dtype=float)
     assert seas_full.shape[0] == temp_np.shape[0] == time_np.shape[0]
@@ -126,9 +123,9 @@ for ax, nm in zip(axes, region_order):
     mt90 = results[nm]["monthly_90_thresh"]
     mt80 = results[nm]["monthly_80_thresh"]
 
-    ax.plot(x, ms,   marker="o", label="Climatology (Monthly)", color="C0",      lw=1.6)
+    ax.plot(x, ms,   marker="o", label="Climatology (Monthly)", color="C0",lw=1.6)
     ax.plot(x, mt90, marker="s", label="90th perc Threshold",   ls="--", color="#ff7f0e", lw=1.6)
-    ax.plot(x, mt80, marker="^", label="80th perc Threshold",   ls=":",  color="C2",      lw=1.6)
+    ax.plot(x, mt80, marker="^", label="80th perc Threshold",   ls=":",  color="C2",lw=1.6)
 
     ax.set_ylabel("Temp (°C)")
     ax.set_title(f"{nm}: Monthly Climatology, 90th & 80th Thresholds ({CLIM_YEARS[0]}–{CLIM_YEARS[1]})")
