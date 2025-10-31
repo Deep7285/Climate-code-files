@@ -116,7 +116,7 @@ year = 2000
 tick_dates = []
 for m in range(1, 13):
     tick_dates.append(pd.Timestamp(year, m, 1))
-    tick_dates.append(pd.Tim<Figure size 1100x800 with 3 Axes>estamp(year, m, 15))
+    tick_dates.append(pd.Timestamp(year, m, 15))
 tick_dates.append(pd.Timestamp(year, 12, 31))  
 
 axes[-1].set_xticks(tick_dates)
