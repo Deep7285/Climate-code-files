@@ -22,7 +22,6 @@ problems = []
 for m in want:
     try:
         import_module(m)
-        # distribution name may differ; fall back to __version__
         try:
             vers[m] = version(m)
         except PackageNotFoundError:
@@ -41,22 +40,21 @@ if problems:
     for m, msg in problems:
         print(f" - {m}: {msg}")
 
-# Minimal API sanity: marineHeatWaves.detect accepts ordinal ints + 1D temp array
 try:
     import numpy as np
     import marineHeatWaves as mhw
-    # make a synthetic 40-day series with a warm spell
+    # make a synthetic 40-day series with a warm spell for testing
     days = np.array([pd.Timestamp("2000-01-01") + pd.Timedelta(i, "D") for i in range(40)])
     ords = np.array([d.toordinal() for d in days], dtype=int)
     temp = 25 + np.sin(np.linspace(0, 6.28, 40))
-    temp[15:25] += 2.0  # warm event
+    temp[15:25] += 2.0 
 
     res, clim = mhw.detect(
         ords, temp,
         climatologyPeriod=[1991, 2020],
         pctile=90, minDuration=5, joinAcrossGaps=True
     )
-    print("\nmarineHeatWaves.detect sanity: OK")
+    print("\nmarineHeatWaves.detect is working correctly.")
     print(f"Detected events: {len(res.get('time_start', []))}")
 except Exception as e:
-    print("\n[ENV ERROR] marineHeatWaves.detect sanity check failed:", e)
+    print("\n[ENV ERROR] marineHeatWaves.detect detection failed:", e)
