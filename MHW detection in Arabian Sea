@@ -1,0 +1,99 @@
+REG = "Arabian Sea"
+ROI = ROI_DICT[REG]
+
+# 1) Open SST (ROI)
+ds, latn, lonn = open_sst(FILES_GLOB, ROI)
+
+# 2) Land mask & chunks
+ocean = ds[SST_VAR].isel(time=0).notnull()
+sst   = ds[SST_VAR].where(ocean).chunk({"time": CHTIME, latn: CHXY, lonn: CHXY})
+
+# 3) Per-grid climatology & 90th-threshold (Oliver/Hobday) — time-aligned
+seas_t, thresh_t = build_grid_baseline(ds, latn, lonn, pctile=90)
+
+# 4) Detect Hobday events per grid (ensure single time chunk along 'time')
+evt_mask = detect_mask_time(
+    sst.chunk({"time": -1}),
+    thresh_t.chunk({"time": -1})
+).rename("mhw_mask").astype("i1")
+
+# 5) Daily metrics for future analysis
+intensity = (sst - seas_t).rename("intensity")                 # all days
+excess    = (sst - thresh_t).where(evt_mask == 1).rename("excess")  # only on event days
+
+# 6) Yearly per-grid summaries
+starts = (evt_mask == 1) & (~(evt_mask.shift(time=1, fill_value=0) == 1))
+events_per_year_grid = (starts
+    .groupby("time.year").sum("time")
+    .rename("events_per_year").astype("i2"))
+days_per_year_grid   = (evt_mask
+    .groupby("time.year").sum("time")
+    .rename("days_per_year").astype("i2"))
+
+# 7) Area-weighted regional means (per year)
+w_lat = area_weights_1d(ds, latn)
+freq_region = (events_per_year_grid.where(ocean)
+               ).weighted(w_lat).mean(dim=[latn, lonn]).compute()
+days_region = (days_per_year_grid.where(ocean)
+               ).weighted(w_lat).mean(dim=[latn, lonn]).compute()
+
+total_events_region = float(freq_region.sum().values)
+total_days_region   = float(days_region.sum().values)
+print(f"{REG} totals — events: {total_events_region:.1f}, days: {total_days_region:.1f}")
+
+# 8) Quick plots (region-mean series)
+years_freq = (freq_region.coords.get("year", None).values
+              if "year" in freq_region.coords
+              else freq_region.get_index("year").values).astype(int)
+years_days = (days_region.coords.get("year", None).values
+              if "year" in days_region.coords
+              else days_region.get_index("year").values).astype(int)
+
+fig, ax = plt.subplots(figsize=(12, 4))
+ax.bar(years_freq, freq_region.values, color="#5b8def", width=0.8)
+ax.set_title(f" MHW events counts in {REG} {BASELINE[0]}–{BASELINE[1]})")
+ax.set_xlabel("Year"); ax.set_ylabel("Events/year ")
+ax.grid(True, ls="--", alpha=0.4)
+ax.text(1, 0.92, f"Total Events: {total_events_region:.1f}", transform=ax.transAxes, ha="right")
+plt.tight_layout(); plt.show()
+
+fig, ax = plt.subplots(figsize=(12, 4))
+ax.bar(years_days, days_region.values, color="#f6a300", width=0.8)
+ax.set_title(f"MHW days in {REG} {BASELINE[0]}–{BASELINE[1]})")
+ax.set_xlabel("Year"); ax.set_ylabel("Days/year")
+ax.grid(True, ls="--", alpha=0.4)
+ax.text(1, 0.92, f"Total MHW days: {total_days_region:.1f}", transform=ax.transAxes, ha="right")
+plt.tight_layout(); plt.show()
+
+# 9) SAVE (Zarr + CSV) — safe chunks & aligned
+out_dir = OUTROOT / ROI_DICT[REG]["slug"]; out_dir.mkdir(parents=True, exist_ok=True)
+
+daily_ds = xr.Dataset(
+    {"mhw_mask": evt_mask, "intensity": intensity, "excess": excess,
+     "seas_t": seas_t, "thresh_t": thresh_t},
+    coords={"time": ds["time"], latn: ds[latn], lonn: ds[lonn]},
+).chunk({"time": CHTIME, latn: CHXY, lonn: CHXY})
+
+# Keep only core coords to avoid Zarr alignment issues
+keep = {"time", latn, lonn}
+dropc = [c for c in daily_ds.coords if c not in keep]
+if dropc:
+    daily_ds = daily_ds.reset_coords(dropc, drop=True)
+
+print("Writing Zarr outputs… (can take time)")
+with ProgressBar():
+    daily_ds.to_zarr(out_dir / "mhw_daily.zarr", mode="w",
+                     safe_chunks=False, align_chunks=True)
+    events_per_year_grid.to_zarr(out_dir / "mhw_events_per_year_grid.zarr", mode="w",
+                                 safe_chunks=False, align_chunks=True)
+    days_per_year_grid.to_zarr(out_dir / "mhw_days_per_year_grid.zarr", mode="w",
+                               safe_chunks=False, align_chunks=True)
+
+freq_region.to_dataframe().to_csv(out_dir / "region_mean_events_per_year.csv")
+days_region.to_dataframe().to_csv(out_dir / "region_mean_days_per_year.csv")
+pd.DataFrame({
+    "total_events_region_mean":[total_events_region],
+    "total_days_region_mean":[total_days_region]
+}).to_csv(out_dir / "region_totals.csv", index=False)
+
+print("Arabian Sea — done.")
