@@ -20,7 +20,7 @@ MIN_DUR  = 5     # minimum event duration (days)
 MAX_GAP  = 2     # join across gaps up to this many days
 
 # Dask-friendly chunks
-CHTIME, CHXY = 180, 60
+CHTIME, CHXY = 160, 40
 
 # Regions
 ROI_DICT = {
