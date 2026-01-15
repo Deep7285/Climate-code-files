@@ -17,7 +17,7 @@ from importlib.metadata import version, PackageNotFoundError
 if not hasattr(np, "NaN"):
     np.NaN = np.nan  
 
-#Check package is working
+#Check the package is working
 try:
     mhw_ver = version('marineHeatWaves')
 except PackageNotFoundError:

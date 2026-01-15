@@ -1,23 +1,26 @@
 # Ckecking the files and Summarize the data
 
 from glob import glob
+import numpy as np, pandas as pd
 
-# file path: data loading and visualization"
+# file path: data loading and visualization
 FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 
 # spatial region of interest (ROI) for subsetting
-ROI = dict(lat_min=0.0, lat_max=25.0, lon_min=20.0, lon_max=100.0)
+ROI = dict(lat_min=0.0, lat_max=30.0, lon_min=40.0, lon_max=110.0)
 
 # North indian ocean subregions
 REGIONS = {
-    "Arabian Sea":    {"lon_min": 20.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 25.0},
-    "Bay Of Bengal":   {"lon_min": 78.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
-    "North Indian Ocean": {"lon_min": 20.0, "lon_max": 100.0, "lat_min": 0.0, "lat_max": 25.0},
+    # Regional bounds for subsetting with lat and lon in degrees
+    "Arabian Sea":    {"lon_min": 40.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 30.0},
+    "Bay Of Bengal":   {"lon_min": 78.0, "lon_max": 110.0, "lat_min": 0.0, "lat_max": 30.0},
+    "North Indian Ocean": {"lon_min": 40.0, "lon_max": 110.0, "lat_min": 0.0, "lat_max": 30.0},
 }
 
+# IO / plotting options
 use_dask = True                 # set False to fully load into memory
 chunks = {"time": 90} if use_dask else None
-sample_map_date: Optional[str] = None 
+sample_map_date: Optional[str] = None  # "2019-06-01"; if None, uses first time step found
 boxmean_var_name = "sst"       
 climatologyPeriod = [1982, 2024]  
 
@@ -29,8 +32,7 @@ def open_sst(files, chunks=None, engine: str = "netcdf4") -> xr.Dataset:
             paths = sorted(glob(files))
             if not paths:
                 raise FileNotFoundError(f"No files match glob: {files}")
-            return xr.open_mfdataset(paths, combine="by_coords",
-                                     parallel=True, chunks=chunks, engine=engine)
+            return xr.open_mfdataset(paths, combine="by_coords", parallel=True, chunks=chunks, engine=engine)
         else:
             if not p.exists():
                 raise FileNotFoundError(f"File not found: {files}")
@@ -40,22 +42,18 @@ def open_sst(files, chunks=None, engine: str = "netcdf4") -> xr.Dataset:
         for f in paths:
             if not Path(f).exists():
                 raise FileNotFoundError(f"File not found: {f}")
-        return xr.open_mfdataset(paths, combine="by_coords",
-                                 parallel=True, chunks=chunks, engine=engine)
+        return xr.open_mfdataset(paths, combine="by_coords", parallel=True, chunks=chunks, engine=engine)
 
 # Subset to region of interest (ROI)
 def subset_roi(ds: xr.Dataset, roi: Dict[str, float], var: str = "sst") -> xr.Dataset:
-
-    # common coord names
+    # Make sure coords are named commonly
     lat_name = "lat" if "lat" in ds.coords else "latitude"
     lon_name = "lon" if "lon" in ds.coords else "longitude"
 
     ds2 = ds.sel(
-        **{
-            lat_name: slice(roi["lat_min"], roi["lat_max"]),
-            lon_name: slice(roi["lon_min"], roi["lon_max"]),
-        }
-    )
+        **{lat_name: slice(roi["lat_min"], roi["lat_max"]),
+           lon_name: slice(roi["lon_min"], roi["lon_max"]),
+        })
     # Keep only the variable of interest and coords
     if var in ds2:
         return ds2[[var]]
@@ -64,8 +62,7 @@ def subset_roi(ds: xr.Dataset, roi: Dict[str, float], var: str = "sst") -> xr.Da
 
 # Print concise metadata
 def print_metadata(ds: xr.Dataset, var: str = "sst") -> None:
-    
-    # Dim sizes
+    # Dimention sizes
     for c in ds.coords:
         arr = ds.coords[c]
         try:
@@ -78,32 +75,30 @@ def print_metadata(ds: xr.Dataset, var: str = "sst") -> None:
     # convert time 
     if "time" in ds.coords:
         t = pd.to_datetime(ds["time"].values)
-        print("\n=== Time Coverage ===")
+        print("\nTime Coverage:")
         print(f"Start: {pd.Timestamp(t[0]).date()}, End: {pd.Timestamp(t[-1]).date()}, Length: {t.size} steps")
 
-    # Global attributes
-    print("\n=== Global attributes ===")
+    # Global attrs
+    print("\nGlobal attributes:")
     for k, v in ds.attrs.items():
         print(f"{k}: {v}")
 
-    # Variable attributes
+    # Variable attrs
     if var in ds:
-        print(f"\n=== Variable '{var}' attributes ===")
+        print(f"\nVariable '{var}' attributes:")
         for k, v in ds[var].attrs.items():
             print(f"{k}: {v}") 
-            print("=== Dimensions ===")
+            print("Dimensions:")
     for k, v in ds.dims.items():
         print(f"{k}: {v}")
 
     # Coordinates preview
-    print("\n=== Coordinates (first few) ===")
+    print("\nCoordinates (first few):")
    
 def summarize_events_table(res: dict) -> pd.DataFrame:
     """
-    Convert marineHeatWaves 'res' dict to a tidy event table.
-    'time_*' in res are *ordinal* days (Python datetime.toordinal).
+    Convert marineHeatWaves 'res' dict to a tidy event table.'time_*' in res are *ordinal* days (Python datetime.toordinal).
     """
-    import numpy as np, pandas as pd
     to_ts = lambda arr: pd.to_datetime([pd.Timestamp.fromordinal(int(d)) for d in np.asarray(arr)])
 
     return pd.DataFrame({
@@ -115,12 +110,12 @@ def summarize_events_table(res: dict) -> pd.DataFrame:
         "cumulative_intensity_degC":    res["intensity_cumulative"],
     })
 
-# Open files
+# 1) Open files
 ds = open_sst(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
 
-# Subset ROI & SST
+# 2) Subset ROI &  'sst'
 ds_roi = subset_roi(ds, ROI, var=boxmean_var_name)
 da = ds_roi[boxmean_var_name]
 
-# Inspect metadata
+# 3) Inspect metadata
 print_metadata(ds_roi, var=boxmean_var_name)
