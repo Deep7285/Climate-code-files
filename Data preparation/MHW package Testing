@@ -9,13 +9,11 @@ res, clim = mhw.detect(ords, temp, climatologyPeriod=[2000, 2000],
 print("events:", len(res.get("time_start", [])))
 
 # Verifies that core libs are importable and compatible with marineHeatWaves.
-
 from importlib import import_module
+import numpy as np
+import marineHeatWaves as mhw
 
-want = [
-    "numpy", "pandas", "xarray", "dask", "bottleneck",
-    "netCDF4", "cftime", "marineHeatWaves"
-]
+want = ["numpy", "pandas", "xarray", "dask", "bottleneck","netCDF4", "cftime", "marineHeatWaves"]
 vers = {}
 problems = []
 
@@ -31,29 +29,22 @@ for m in want:
         problems.append((m, str(e)))
         vers[m] = "IMPORT FAILED"
 
-print("== Package versions ==")
+print("Package versions detailes:")
 for k in want:
     print(f"{k:16s} : {vers[k]}")
-
 if problems:
     print("\n[ENV WARNING] Some packages failed to import:")
     for m, msg in problems:
         print(f" - {m}: {msg}")
 
+# marineHeatWaves.detect accepts ordinal ints + 1D temp array
 try:
-    import numpy as np
-    import marineHeatWaves as mhw
-    # make a synthetic 40-day series with a warm spell for testing
+    # make a synthetic 40-day series with a warm spell
     days = np.array([pd.Timestamp("2000-01-01") + pd.Timedelta(i, "D") for i in range(40)])
     ords = np.array([d.toordinal() for d in days], dtype=int)
     temp = 25 + np.sin(np.linspace(0, 6.28, 40))
-    temp[15:25] += 2.0 
-
-    res, clim = mhw.detect(
-        ords, temp,
-        climatologyPeriod=[1991, 2020],
-        pctile=90, minDuration=5, joinAcrossGaps=True
-    )
+    temp[15:25] += 2.0  # warm event
+    res, clim = mhw.detect(ords, temp, climatologyPeriod=[1991, 2020], pctile=90, minDuration=5, joinAcrossGaps=True)
     print("\nmarineHeatWaves.detect is working correctly.")
     print(f"Detected events: {len(res.get('time_start', []))}")
 except Exception as e:
