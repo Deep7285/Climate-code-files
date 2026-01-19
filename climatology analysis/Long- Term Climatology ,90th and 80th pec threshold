@@ -32,26 +32,26 @@ def mhw_seas_thresh_doy(da_box: xr.DataArray, clim_years: Tuple[int,int]) -> Tup
             thresh_80th_366[d-1] = np.nanmean(thresh_80th_full[m])
     return seas_366, thresh_90th_366, thresh_80th_366
 
-# load data
-ds = open_mfdataset(FILES_GLOB, chunks={"time": 120})
+# Load dataset
+ds_annual= open_mfdataset(FILES_GLOB)
 # Compute curves per region and store
-curves = {}  
+curves_annual = {}  
 for name, box in REGIONS.items():
-    da = subset_box(ds[[VAR]], box)[VAR]
+    da = subset_box(ds_annual[[VAR]], box)[VAR]
     da_box = area_weighted_boxmean(da)
     seas_doy, thresh_90th_doy, thresh_80th_doy = mhw_seas_thresh_doy(da_box, CLIM_YEARS)
-    curves[name] = {"seas": seas_doy, "90th thresh": thresh_90th_doy, "80th thresh": thresh_80th_doy}
+    curves_annual[name] = {"seas": seas_doy, "90th thresh": thresh_90th_doy, "80th thresh": thresh_80th_doy}
 
 # Plotting three stacked panels with shared X-axis
 x_dates = pd.date_range("2000-01-01", "2000-12-31", freq="D")  
 fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 8), sharex=True, constrained_layout=True)
 
 # use common y-limits for comparability
-all_vals = np.concatenate([np.r_[v["seas"], v["90th thresh"], v["80th thresh"]] for v in curves.values()])
+all_vals = np.concatenate([np.r_[v["seas"], v["90th thresh"], v["80th thresh"]] for v in curves_annual.values()])
 ymin = float(np.nanmin(all_vals)) - 0.2
 ymax = float(np.nanmax(all_vals)) + 0.2 
 
-for ax, (name, ct) in zip(axes, curves.items()):
+for ax, (name, ct) in zip(axes, curves_annual.items()):
     ax.plot(x_dates, ct["seas"],   label="Climatology (Annual)", color="C0", lw=1.6)
     ax.plot(x_dates, ct["90th thresh"], label="90th perc Threshold", ls="--", color= "#ff7f0e", lw=1.6)
     ax.plot(x_dates, ct["80th thresh"], label="80th perc Threshold", ls="--", color= "#24fa11", lw=1.6)
