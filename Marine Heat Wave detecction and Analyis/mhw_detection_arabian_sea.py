@@ -45,7 +45,7 @@ excess    = (sst - thresh_t).where(evt_mask == 1).rename("excess")  # only on ev
 # compute starts on the boolean mask
 starts_bool = (evt_mask_bool & ~(evt_mask_bool.shift(time=1, fill_value=False)))
 
-# NaN on land, keep float dtype (so NaNs survive)
+# NaN on land, keep float dtype 
 starts = starts_bool.where(ocean).astype("float32")
 events_per_year_grid = (starts.groupby("time.year").sum("time").rename("events_per_year").astype("float32"))  
 days_per_year_grid = (evt_mask.groupby("time.year").sum("time").rename("days_per_year").astype("float32"))
