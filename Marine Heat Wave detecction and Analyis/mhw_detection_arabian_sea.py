@@ -1,8 +1,6 @@
 REG = "Arabian Sea"
 ROI = ROI_DICT[REG]
 
-# === X-AXIS YEAR TICK CONTROLS ===
-# Set the tick step you want on the x-axis (e.g., 1, 2, 5, 10). 
 # Use None or 0 to show every year.
 YEAR_TICK_STEP  = 5
 # (Optional) force a start/end for ticks; leave as None to auto-fit data range
@@ -12,7 +10,6 @@ YEAR_TICK_END   = None
 YEAR_TICK_ROT   = 0
 
 def apply_year_ticks(ax, years, step=YEAR_TICK_STEP, start=YEAR_TICK_START, end=YEAR_TICK_END, rotate=YEAR_TICK_ROT):
-    """Apply integer year ticks with a given step. If step is None/0, show every year."""
     years = np.asarray(years, dtype=int)
     y_min, y_max = int(years.min()), int(years.max())
     a = y_min if start is None else int(start)
@@ -24,62 +21,44 @@ def apply_year_ticks(ax, years, step=YEAR_TICK_STEP, start=YEAR_TICK_START, end=
     ax.set_xticks(ticks)
     ax.set_xticklabels([str(y) for y in ticks], rotation=rotate)
 
-# 1) Open SST (ROI)
+# Open SST (ROI)
 ds, latn, lonn = open_sst(FILES_GLOB, ROI)
 
-# 2) Land mask & chunks
+# Land mask & chunks
 ocean = ds[SST_VAR].notnull().any("time")
 sst   = ds[SST_VAR].where(ocean).chunk({"time": CHTIME, latn: CHXY, lonn: CHXY})
 
-# 3) Per-grid climatology & 90th-threshold (Oliver/Hobday) — time-aligned
+# Per-grid climatology & 90th-threshold (Oliver/Hobday) — time-aligned
 seas_t, thresh_t = build_grid_baseline(ds, latn, lonn, pctile=90)
 
-# 4) Detect Hobday events per grid (ensure single time chunk along 'time')
-# CHANGED: compute boolean mask for logic
-evt_mask_bool = detect_mask_time(
-    sst.chunk({"time": -1}),
-    thresh_t.chunk({"time": -1})
-).rename("mhw_mask")  # bool
-
-# CHANGED: NaN on land & keep float so NaNs persist to Zarr
+# Detect Hobday events per grid (ensure single time chunk along 'time')
+# compute boolean mask for logic
+evt_mask_bool = detect_mask_time(sst.chunk({"time": -1}),thresh_t.chunk({"time": -1})).rename("mhw_mask")  # bool
+# NaN on land & keep float so NaNs persist to Zarr
 evt_mask = evt_mask_bool.where(ocean).astype("float32")
 
-
-# 5) Daily metrics for future analysis
-intensity = (sst - seas_t).rename("intensity")                 # all days
+# Daily metrics for future analysis
+intensity = (sst - seas_t).rename("intensity") 
 excess    = (sst - thresh_t).where(evt_mask == 1).rename("excess")  # only on event days
 
-# 6) Yearly per-grid summaries
-# CHANGED: compute starts on the boolean mask
-starts_bool = (evt_mask_bool &
-               ~(evt_mask_bool.shift(time=1, fill_value=False)))
+# Yearly per-grid summaries
+# compute starts on the boolean mask
+starts_bool = (evt_mask_bool & ~(evt_mask_bool.shift(time=1, fill_value=False)))
 
-# CHANGED: NaN on land, keep float dtype (so NaNs survive)
+# NaN on land, keep float dtype 
 starts = starts_bool.where(ocean).astype("float32")
+events_per_year_grid = (starts.groupby("time.year").sum("time").rename("events_per_year").astype("float32"))  
+days_per_year_grid = (evt_mask.groupby("time.year").sum("time").rename("days_per_year").astype("float32"))
 
-events_per_year_grid = (starts
-    .groupby("time.year").sum("time")
-    .rename("events_per_year")
-    .astype("float32"))  # CHANGED: don't cast to int -> keeps NaNs
-
-days_per_year_grid = (evt_mask   # this is already float with NaNs on land
-    .groupby("time.year").sum("time")
-    .rename("days_per_year")
-    .astype("float32"))
-
-
-# 7) Area-weighted regional means (per year)
+# Area-weighted regional means (per year)
 w_lat = area_weights_1d(ds, latn)
-freq_region = (events_per_year_grid.where(ocean)
-               ).weighted(w_lat).mean(dim=[latn, lonn]).compute()
-days_region = (days_per_year_grid.where(ocean)
-               ).weighted(w_lat).mean(dim=[latn, lonn]).compute()
-
+freq_region = (events_per_year_grid.where(ocean)).weighted(w_lat).mean(dim=[latn, lonn]).compute()
+days_region = (days_per_year_grid.where(ocean)).weighted(w_lat).mean(dim=[latn, lonn]).compute()
 total_events_region = float(freq_region.sum().values)
 total_days_region   = float(days_region.sum().values)
 print(f"{REG} totals — events: {total_events_region:.1f}, days: {total_days_region:.1f}")
 
-# 8) Quick plots (region-mean series)
+# Quick plots (region-mean series)
 years_freq = (freq_region.coords.get("year", None).values
               if "year" in freq_region.coords
               else freq_region.get_index("year").values).astype(int)
@@ -93,7 +72,7 @@ ax.set_title(f" MHW events counts in {REG} {BASELINE[0]}–{BASELINE[1]}")
 ax.set_xlabel("Year"); ax.set_ylabel("Events/year")
 ax.grid(True, ls="--", alpha=0.4)
 ax.text(0.5, 0.92, f"Total Events: {total_events_region:.1f}", transform=ax.transAxes, ha="center")
-apply_year_ticks(ax, years_freq)   # <<< apply your custom ticks here
+apply_year_ticks(ax, years_freq)  
 plt.tight_layout(); plt.show()
 
 fig, ax = plt.subplots(figsize=(12, 4))
@@ -102,17 +81,14 @@ ax.set_title(f"MHW days in {REG} {BASELINE[0]}–{BASELINE[1]}")
 ax.set_xlabel("Year"); ax.set_ylabel("Days/year")
 ax.grid(True, ls="--", alpha=0.4)
 ax.text(0.5, 0.92, f"Total MHW days: {total_days_region:.1f}", transform=ax.transAxes, ha="center")
-apply_year_ticks(ax, years_days)   # <<< and here as well
+apply_year_ticks(ax, years_days)  
 plt.tight_layout(); plt.show()
 
-# 9) SAVE (Zarr + CSV) — safe chunks & aligned
+# 9) SAVE (Zarr + CSV)
 out_dir = OUTROOT / ROI_DICT[REG]["slug"]; out_dir.mkdir(parents=True, exist_ok=True)
 
-daily_ds = xr.Dataset(
-    {"mhw_mask": evt_mask, "intensity": intensity, "excess": excess,
-     "seas_t": seas_t, "thresh_t": thresh_t},
-    coords={"time": ds["time"], latn: ds[latn], lonn: ds[lonn]},
-).chunk({"time": CHTIME, latn: CHXY, lonn: CHXY})
+daily_ds = xr.Dataset({"mhw_mask": evt_mask, "intensity": intensity, "excess": excess, "seas_t": seas_t, "thresh_t": thresh_t},
+    coords={"time": ds["time"], latn: ds[latn], lonn: ds[lonn]},).chunk({"time": CHTIME, latn: CHXY, lonn: CHXY})
 
 # Keep only core coords to avoid Zarr alignment issues
 keep = {"time", latn, lonn}
@@ -122,18 +98,12 @@ if dropc:
 
 print("Writing Zarr outputs… (can take time)")
 with ProgressBar():
-    daily_ds.to_zarr(out_dir / "mhw_daily.zarr", mode="w",
-                     safe_chunks=False, align_chunks=True)
-    events_per_year_grid.to_zarr(out_dir / "mhw_events_per_year_grid.zarr", mode="w",
-                                 safe_chunks=False, align_chunks=True)
-    days_per_year_grid.to_zarr(out_dir / "mhw_days_per_year_grid.zarr", mode="w",
-                               safe_chunks=False, align_chunks=True)
+    daily_ds.to_zarr(out_dir / "mhw_daily.zarr", mode="w", safe_chunks=False, align_chunks=True)
+    events_per_year_grid.to_zarr(out_dir / "mhw_events_per_year_grid.zarr", mode="w", safe_chunks=False, align_chunks=True)
+    days_per_year_grid.to_zarr(out_dir / "mhw_days_per_year_grid.zarr", mode="w", safe_chunks=False, align_chunks=True)
 
-freq_region.to_dataframe().to_csv(out_dir / "region_mean_events_per_year.csv")
-days_region.to_dataframe().to_csv(out_dir / "region_mean_days_per_year.csv")
-pd.DataFrame({
-    "total_events_region_mean":[total_events_region],
-    "total_days_region_mean":[total_days_region]
-}).to_csv(out_dir / "region_totals.csv", index=False)
+freq_region.to_dataframe().to_csv(out_dir / "mhw_region_mean_events_per_year.csv")
+days_region.to_dataframe().to_csv(out_dir / "mhw_region_mean_days_per_year.csv")
+pd.DataFrame({"mhw_total_events_region_mean":[total_events_region],"mhw_total_days_region_mean":[total_days_region]}).to_csv(out_dir / "mhw_region_totals.csv", index=False)
 
 print("Arabian Sea — done.")
