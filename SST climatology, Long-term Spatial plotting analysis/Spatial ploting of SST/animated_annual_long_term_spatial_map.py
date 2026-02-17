@@ -1,16 +1,18 @@
-# Annual climatology spatial map animation for North Indian Ocean 
-# This animatinon shows the daily mean SST climatology (1982-2024) for each day of the year from 1st janualty to 31st december
-# This animation has 366 toatal frmes representing the daily mean SST climatology for each day of the year
+# Annual climatology spatial map animation for the North Indian Ocean 
+# This animation shows the daily mean SST climatology (1982-2024) for each day of the year from 1st January to 31st December
+# This animation has 366 total frames representing the daily mean SST climatology for each day of the year
 
 from glob import glob
 from pathlib import Path
-import numpy as np, pandas as pd, xarray as xr
+import numpy as np 
+import pandas as pd
+import xarray as xr
 import matplotlib.pyplot as plt
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib import animation
 
 # data path & region of interest (ROI)
-FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+FILES_GLOB = "/home/Desktop/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 VAR = "sst"
 CLIM_YEARS = (1982, 2024)
 ROI = {"lat_min": 0.0, "lat_max": 25.0, "lon_min": 20.0, "lon_max": 100.0}
@@ -20,11 +22,11 @@ OUTDIR = Path("outputs_anim"); OUTDIR.mkdir(exist_ok=True, parents=True)
 OUT_MP4 = OUTDIR / "NIO_DailyClimatology_1982-2024.mp4"
 OUT_GIF = OUTDIR / "NIO_DailyClimatology_1982-2024.gif"
 
-# Setting temperature scale and color map
+# Setting temperature scale and colour map
 V_MIN, V_MAX, V_STEP = 20, 34, 1
 LEVELS = np.arange(V_MIN, V_MAX + V_STEP, V_STEP)
 
-# Color Palette: light cream to deep red 
+# Colour Palette: light cream to deep red 
 PALETTE = [
     "#f9f5e7", "#f2ebd2", "#eedeb7", "#e8cea1", "#e3bd83",
           "#e0ad6a", "#dc9c55", "#d88943", "#d47635", "#cf652b",
