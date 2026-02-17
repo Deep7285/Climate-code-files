@@ -16,7 +16,7 @@ if not hasattr(_np, "NaN"):
     _np.NaN = _np.nan
 
 # File path
-FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+FILES_GLOB = "/home/Desktop/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 VAR = "sst"
 CLIM_YEARS: Tuple[int,int] = (1982, 2024)   
 REGIONS: Dict[str, Dict[str, float]] = {   # modify the lat-lon bounds as per your region
@@ -25,12 +25,7 @@ REGIONS: Dict[str, Dict[str, float]] = {   # modify the lat-lon bounds as per yo
     "North Indian Ocean": {"lon_min": 40.0, "lon_max": 110.0, "lat_min": 0.0, "lat_max": 30.0},
 }
 
-SEASONS = {
-    "DJF": [12, 1, 2],
-    "MAM": [3, 4, 5],
-    "JJA": [6, 7, 8],
-    "SON": [9, 10, 11],
-}
+SEASONS = {"DJF": [12, 1, 2],"MAM": [3, 4, 5],"JJA": [6, 7, 8],"SON": [9, 10, 11],}
 season_order = ["DJF", "MAM", "JJA", "SON"] 
 OUTDIR = Path("outputs"); OUTDIR.mkdir(parents=True, exist_ok=True)
 
