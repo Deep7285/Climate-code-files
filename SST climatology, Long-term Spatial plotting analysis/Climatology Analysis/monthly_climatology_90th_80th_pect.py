@@ -3,7 +3,6 @@
 from glob import glob
 from pathlib import Path
 from typing import Dict, Tuple
-
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -12,7 +11,7 @@ import matplotlib.dates as mdates
 import marineHeatWaves as mhw  
 
 
-FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+FILES_GLOB = "/home/Desktop/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 VAR = "sst"
 CLIM_YEARS: Tuple[int, int] = (1982, 2024)
 REGIONS: Dict[str, Dict[str, float]] = {
