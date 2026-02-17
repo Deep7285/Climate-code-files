@@ -1,14 +1,16 @@
 # Spatial map of north indian ocean
 from glob import glob
 from pathlib import Path
-import numpy as np, xarray as xr, pandas as pd
+import numpy as np
+import xarray as xr
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 import cmocean.cm as cmo
 
 
 # data loading
-FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+FILES_GLOB = "/home/Desktop/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 VAR = "sst"
 YEARS = (1982, 2024)
 ROI = {"lat_min": 0.0, "lat_max": 25.0, "lon_min": 40.0, "lon_max": 100.0}
@@ -48,7 +50,7 @@ def open_roi(files_glob, roi, years, engine="netcdf4"):
 # plotting function
 def plot_map(data2d: xr.DataArray, latn: str, lonn: str, title: str):
     plt.figure(figsize=(7.8, 4.6))
-    #assiging the land color (NAN values)
+    # assigning the land color (NAN values)
     cmap_land = CMAP.copy()
     cmap_land.set_bad(color= "#d3d3d3") # light gray for land
     im = plt.pcolormesh(data2d[lonn], data2d[latn], data2d,
@@ -60,7 +62,7 @@ def plot_map(data2d: xr.DataArray, latn: str, lonn: str, title: str):
     cbar.set_ticks(LEVELS)
     cbar.ax.set_yticklabels([f"{lv:.1f}" for lv in LEVELS])
     ax= plt.gca()
-    #x and y lables formatting
+    #x and y labels formatting
     xticks= np.arange(40, 101, 10)
     yticks= np.arange(0, 26, 5)
     ax.set_xticks(xticks); ax.set_yticks(yticks)
