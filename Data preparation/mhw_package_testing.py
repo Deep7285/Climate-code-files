@@ -1,11 +1,10 @@
-#check if marineHeatWaves is working
+#check if marineHeatWaves package is working
 
 t = pd.date_range("2000-01-01", periods=40, freq="D")
 ords = np.array([d.toordinal() for d in t], dtype=int)
 temp = 25 + np.sin(np.linspace(0, 6.28, 40)); temp[15:25] += 2
 
-res, clim = mhw.detect(ords, temp, climatologyPeriod=[2000, 2000],
-                       pctile=90, minDuration=5, joinAcrossGaps=True)
+res, clim = mhw.detect(ords, temp, climatologyPeriod=[2000, 2000], pctile=90, minDuration=5, joinAcrossGaps=True) #hobdey's defination
 print("events:", len(res.get("time_start", [])))
 
 # Verifies that core libs are importable and compatible with marineHeatWaves.
