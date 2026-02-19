@@ -4,7 +4,8 @@
 
 import sys, platform
 import numpy as np
-import pandas as pd, xarray as xr, dask, bottleneck, netCDF4, cftime, matplotlib
+import pandas as pd
+import xarray as xr, dask, bottleneck, netCDF4, cftime
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Union
 import matplotlib.pyplot as plt
