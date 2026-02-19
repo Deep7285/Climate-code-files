@@ -1,12 +1,12 @@
-# Ckecking the files and Summarize the data
+# Checking the files and Summarize the data
 
 from glob import glob
 import numpy as np, pandas as pd
 
 # file path: data loading and visualization
-FILES_GLOB = "/home/deepak/Desktop/CAS_deepak/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
+FILES_GLOB = "/home/Desktop/Noah_data_1982-2024_SST_daily_mean/sst.day.mean.*.nc"
 
-# spatial region of interest (ROI) for subsetting
+# region of interest
 ROI = dict(lat_min=0.0, lat_max=30.0, lon_min=40.0, lon_max=110.0)
 
 # North indian ocean subregions
