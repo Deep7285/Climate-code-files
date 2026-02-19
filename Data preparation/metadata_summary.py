@@ -11,16 +11,15 @@ ROI = dict(lat_min=0.0, lat_max=30.0, lon_min=40.0, lon_max=110.0)
 
 # North indian ocean subregions
 REGIONS = {
-    # Regional bounds for subsetting with lat and lon in degrees
     "Arabian Sea":    {"lon_min": 40.0, "lon_max": 78.0,  "lat_min": 0.0, "lat_max": 30.0},
     "Bay Of Bengal":   {"lon_min": 78.0, "lon_max": 110.0, "lat_min": 0.0, "lat_max": 30.0},
     "North Indian Ocean": {"lon_min": 40.0, "lon_max": 110.0, "lat_min": 0.0, "lat_max": 30.0},
 }
 
-# IO / plotting options
+# IO / plotting
 use_dask = True                 # set False to fully load into memory
 chunks = {"time": 90} if use_dask else None
-sample_map_date: Optional[str] = None  # "2019-06-01"; if None, uses first time step found
+sample_map_date: Optional[str] = None  
 boxmean_var_name = "sst"       
 climatologyPeriod = [1982, 2024]  
 
@@ -44,23 +43,20 @@ def open_sst(files, chunks=None, engine: str = "netcdf4") -> xr.Dataset:
                 raise FileNotFoundError(f"File not found: {f}")
         return xr.open_mfdataset(paths, combine="by_coords", parallel=True, chunks=chunks, engine=engine)
 
-# Subset to region of interest (ROI)
+# Subset to region of interest
 def subset_roi(ds: xr.Dataset, roi: Dict[str, float], var: str = "sst") -> xr.Dataset:
     # Make sure coords are named commonly
     lat_name = "lat" if "lat" in ds.coords else "latitude"
     lon_name = "lon" if "lon" in ds.coords else "longitude"
 
-    ds2 = ds.sel(
-        **{lat_name: slice(roi["lat_min"], roi["lat_max"]),
-           lon_name: slice(roi["lon_min"], roi["lon_max"]),
-        })
+    ds2 = ds.sel(**{lat_name: slice(roi["lat_min"], roi["lat_max"]),lon_name: slice(roi["lon_min"], roi["lon_max"]),})
     # Keep only the variable of interest and coords
     if var in ds2:
         return ds2[[var]]
     else:
         raise KeyError(f"Variable '{var}' not found. Available: {list(ds2.data_vars)}")
 
-# Print concise metadata
+# Print metadata
 def print_metadata(ds: xr.Dataset, var: str = "sst") -> None:
     # Dimention sizes
     for c in ds.coords:
@@ -110,12 +106,12 @@ def summarize_events_table(res: dict) -> pd.DataFrame:
         "cumulative_intensity_degC":    res["intensity_cumulative"],
     })
 
-# 1) Open files
+# Open files
 ds = open_sst(FILES_GLOB, chunks={"time": 120}, engine="netcdf4")
 
-# 2) Subset ROI &  'sst'
+# Subset ROI &  'sst'
 ds_roi = subset_roi(ds, ROI, var=boxmean_var_name)
 da = ds_roi[boxmean_var_name]
 
-# 3) Inspect metadata
+# Inspect metadata
 print_metadata(ds_roi, var=boxmean_var_name)
